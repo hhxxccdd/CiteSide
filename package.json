@@ -1,0 +1,13 @@
+{
+  "name": "researchflow",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:api": "npm run start:dev -w @researchflow/api",
+    "dev:extension": "npm run dev -w @researchflow/extension",
+    "build": "npm run build -w @researchflow/api && npm run build -w @researchflow/extension",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down"
+  }
+}
+

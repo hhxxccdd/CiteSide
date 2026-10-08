@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: researchflow
+      POSTGRES_USER: researchflow
+      POSTGRES_PASSWORD: researchflow
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - researchflow-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U researchflow -d researchflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  researchflow-postgres:
+
