@@ -2,7 +2,7 @@
 
 Chrome 侧栏扩展与本地 API 的项目骨架。产品范围见 [PRD](docs/PRD.md)。
 数据库选型及与 MySQL 的取舍见 [数据库选型说明](docs/database-choice.md)。
-下一步的实现设计见 [SDD-001：当前网页上下文读取与侧栏预览](docs/SDD-001-page-context.md)。
+选区与侧栏预览设计见 [SDD-001](docs/SDD-001-page-context.md)，单次提问任务设计见 [SDD-002](docs/SDD-002-single-task-agent.md)，知识库设计见 [SDD-003](docs/SDD-003-knowledge-base.md)。
 
 ## 目录
 
@@ -62,4 +62,4 @@ API 健康检查：`http://127.0.0.1:3000/api/health`。该接口同时检查 Po
 
 修改扩展代码后重新构建，并在 `chrome://extensions` 点击刷新。也可运行 `npm run dev:extension` 持续构建，然后手动刷新扩展。
 
-当前只建立技术骨架。页面读取、资料库、研究任务与 Qwen 接入会在后续实现。API Key 只放在后端环境变量，不写入扩展或仓库。
+当前已开始实现选区预览与确认。第一版计划完成“确认一段网页选区 → 提问 → 工具读取 → 流式回答 → 用户确认保存 → 下次用向量检索查到旧笔记”这一条闭环；提问和知识库功能仍待实现。使用知识库向量检索前，还需为 PostgreSQL 安装 pgvector 并配置后端文本向量模型。API Key 只放在后端环境变量，不写入扩展或仓库。

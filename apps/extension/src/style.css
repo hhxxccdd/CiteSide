@@ -24,4 +24,18 @@ h2 { margin: 0 0 10px; font-size: 18px; }
 button { width: 100%; padding: 10px 12px; border: 1px solid #b9d2c7; border-radius: 9px; background: #eff7f3; color: #195c4d; font-size: 13px; font-weight: 600; cursor: pointer; }
 button:hover { background: #e4f1eb; }
 footer { margin-top: 24px; color: #8a9792; text-align: center; font-size: 11px; }
-
+.selection-card { margin-top: 14px; }
+.selection-url { overflow-wrap: anywhere; }
+.selection-block + .selection-block { border-top: 1px solid #dde7e2; margin-top: 18px; padding-top: 18px; }
+.selection-block .description { margin-bottom: 10px; }
+.button-row { display: flex; gap: 8px; }
+.button-row button { flex: 1; }
+button.secondary { background: white; color: #52665d; }
+button.secondary:hover { background: #f5f7f6; }
+.selection-text {
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}

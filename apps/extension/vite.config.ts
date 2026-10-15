@@ -8,7 +8,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     rollupOptions: {
-      input: resolve(__dirname, 'sidepanel.html'),
+      input: {
+         sidepanel: resolve(__dirname,'sidepanel.html'),
+         background:resolve(__dirname,'src/background/index.ts')
+      },
+      output:{
+        entryFileNames: (chunk) =>  chunk.name === 'background' ? 'background.js' : 'asset/[name]-[hash].js'
+      },
     },
   },
 });
