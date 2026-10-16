@@ -2,12 +2,15 @@
 import { onUnmounted, ref, watch } from "vue";
 import type { PageSelection } from "../page-context/useSelectionPreview";
 import { runResearch, type ResearchResult } from "./researchApi";
+import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
 
 const props = defineProps<{ confirmed: PageSelection | null }>();
 
 const question = ref("");
 const result = ref<ResearchResult | null>(null);
 const submittedContext = ref<PageSelection | null>(null);
+const submittedQuestion = ref("");
+const completedRun = ref(0);
 const pending = ref(false);
 const error = ref("");
 let controller: AbortController | null = null;
@@ -23,6 +26,7 @@ watch(() => props.confirmed, (selection) => {
   pending.value = false;
   result.value = null;
   submittedContext.value = null;
+  submittedQuestion.value = "";
   error.value = "";
 });
 
@@ -61,6 +65,7 @@ async function submit(): Promise<void> {
   pending.value = true;
   result.value = null;
   submittedContext.value = selection;
+  submittedQuestion.value = text;
 
   try {
     const answer = await runResearch(text, {
@@ -69,7 +74,10 @@ async function submit(): Promise<void> {
       text: selection.text,
       truncated: selection.truncated,
     }, controller.signal);
-    if (currentRequest === requestNumber) result.value = answer;
+    if (currentRequest === requestNumber) {
+      result.value = answer;
+      completedRun.value += 1;
+    }
   } catch (cause) {
     if (currentRequest === requestNumber) {
       error.value = cause instanceof Error && cause.name !== "AbortError"
@@ -142,6 +150,14 @@ async function submit(): Promise<void> {
       <p v-if="result.knowledgeSearchFailed" class="source-warning">个人笔记检索失败。</p>
       <p v-if="result.webSearchFailed" class="source-warning">联网搜索失败。</p>
       <p v-if="result.webPageReadFailed" class="source-warning">网页原文读取失败。</p>
+
+      <KnowledgeSave
+        :key="completedRun"
+        :answer="result.answer"
+        :question="submittedQuestion"
+        :source-title="submittedContext.title"
+        :source-url="submittedContext.url"
+      />
     </div>
   </section>
 </template>
