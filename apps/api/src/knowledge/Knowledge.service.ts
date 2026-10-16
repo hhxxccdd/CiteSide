@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from "@nestjs/common";
+import { Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import { EmbeddingService } from "./embedding/embedding.service";
 import { ConfigService } from "@nestjs/config";
 import { DatabaseService } from "../database/database.service";
@@ -21,6 +21,27 @@ export interface KnowledgeSearchResult {
   similarity: number;
 }
 
+export interface KnowledgeEntry {
+  id: string;
+  title: string;
+  content: string;
+  originalQuestion: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UpdateKnowledgeInput {
+  title: string;
+  content: string;
+}
+
+const ENTRY_COLUMNS = `id::text AS id, title, content,
+  original_question AS "originalQuestion",
+  source_title AS "sourceTitle", source_url AS "sourceUrl",
+  created_at AS "createdAt", updated_at AS "updatedAt"`;
+
 @Injectable()
 export class KnowledgeService {
   constructor(
@@ -41,9 +62,7 @@ export class KnowledgeService {
       throw new BadRequestException("笔记内容和来源不能为空");
     }
 
-    const vector = await this.embedding.embed(`${title}\n${content}`);
-    const vectorText = `[${vector.join(",")}]`;
-    const model = this.config.getOrThrow<string>("EMBEDDING_MODEL");
+    const { vectorText, model } = await this.vectorFor(title, content);
 
     const result = await this.database.query<{ id: string }>(
       `INSERT INTO knowledge_entries
@@ -63,6 +82,68 @@ export class KnowledgeService {
     );
 
     return result.rows[0].id;
+  }
+
+  async list(filter = ""): Promise<KnowledgeEntry[]> {
+    const result = await this.database.query<KnowledgeEntry>(
+      `SELECT ${ENTRY_COLUMNS}
+       FROM knowledge_entries
+       WHERE $1 = '' OR position(lower($1) in lower(title)) > 0
+         OR position(lower($1) in lower(content)) > 0
+       ORDER BY created_at DESC, id DESC
+       LIMIT 50`,
+      [filter.trim()],
+    );
+    return result.rows;
+  }
+
+  async getById(id: string): Promise<KnowledgeEntry> {
+    const result = await this.database.query<KnowledgeEntry>(
+      `SELECT ${ENTRY_COLUMNS} FROM knowledge_entries WHERE id = $1`,
+      [id],
+    );
+    if (!result.rows[0]) throw new NotFoundException("笔记不存在");
+    return result.rows[0];
+  }
+
+  async update(id: string, input: UpdateKnowledgeInput): Promise<KnowledgeEntry> {
+    const title = input.title.trim();
+    const content = input.content.trim();
+    if (!title || !content) {
+      throw new BadRequestException("笔记标题和正文不能为空");
+    }
+
+    await this.getById(id);
+    const { vectorText, model } = await this.vectorFor(title, content);
+    const result = await this.database.query<KnowledgeEntry>(
+      `UPDATE knowledge_entries
+       SET title = $2, content = $3, embedding = $4::vector,
+           embedding_model = $5, updated_at = now()
+       WHERE id = $1
+       RETURNING ${ENTRY_COLUMNS}`,
+      [id, title, content, vectorText, model],
+    );
+    if (!result.rows[0]) throw new NotFoundException("笔记不存在");
+    return result.rows[0];
+  }
+
+  async remove(id: string): Promise<void> {
+    const result = await this.database.query<{ id: string }>(
+      `DELETE FROM knowledge_entries WHERE id = $1 RETURNING id::text AS id`,
+      [id],
+    );
+    if (!result.rows[0]) throw new NotFoundException("笔记不存在");
+  }
+
+  private async vectorFor(
+    title: string,
+    content: string,
+  ): Promise<{ vectorText: string; model: string }> {
+    const vector = await this.embedding.embed(`${title}\n${content}`);
+    return {
+      vectorText: `[${vector.join(",")}]`,
+      model: this.config.getOrThrow<string>("EMBEDDING_MODEL"),
+    };
   }
 
   async search(

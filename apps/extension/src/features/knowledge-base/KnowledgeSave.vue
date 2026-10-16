@@ -8,6 +8,7 @@ const props = defineProps<{
   sourceTitle: string;
   sourceUrl: string;
 }>();
+const emit = defineEmits<{ saved: [id: string] }>();
 
 const editing = ref(false);
 const title = ref(props.question);
@@ -34,6 +35,7 @@ async function save(): Promise<void> {
       sourceUrl: props.sourceUrl,
     });
     editing.value = false;
+    emit("saved", savedId.value);
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "保存失败，请重试。";
   } finally {

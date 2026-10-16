@@ -61,3 +61,17 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .knowledge-save input { width: 100%; padding: 10px; border: 1px solid #b9d2c7; border-radius: 9px; font: inherit; font-size: 13px; }
 .knowledge-save .description { overflow-wrap: anywhere; }
 .save-success { color: #195c4d; font-size: 13px; overflow-wrap: anywhere; }
+.app-navigation { display: flex; gap: 8px; margin-bottom: 14px; }
+.app-navigation button { flex: 1; }
+.knowledge-manager h2 { margin-top: 18px; }
+.knowledge-filter, .knowledge-edit { display: grid; gap: 9px; }
+.knowledge-filter label, .knowledge-edit label { font-size: 13px; font-weight: 600; }
+.knowledge-filter input, .knowledge-edit input { width: 100%; padding: 10px; border: 1px solid #b9d2c7; border-radius: 9px; font: inherit; font-size: 13px; }
+.knowledge-list { list-style: none; padding: 0; margin: 16px 0; }
+.knowledge-list li + li { margin-top: 8px; }
+.knowledge-list button { text-align: left; overflow-wrap: anywhere; }
+.knowledge-detail { border-top: 1px solid #dde7e2; padding-top: 4px; overflow-wrap: anywhere; }
+.knowledge-detail a { color: #195c4d; font-size: 13px; }
+.knowledge-actions { display: grid; gap: 8px; margin-top: 14px; }
+.delete-confirm { padding: 12px; border: 1px solid #d7aca5; border-radius: 9px; }
+.delete-confirm p { margin-top: 0; font-size: 13px; }

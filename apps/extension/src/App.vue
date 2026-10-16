@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { useSelectionPreview } from "./features/page-context/useSelectionPreview";
 import SelectionPreview from "./features/page-context/SelectionPreview.vue";
 import ResearchRun from "./features/research-run/ResearchRun.vue";
+import KnowledgeManager from "./features/knowledge-base/KnowledgeManager.vue";
 
 const {
   page,
@@ -16,6 +17,15 @@ const {
 
 type ConnectionState = "checking" | "ready" | "unavailable";
 const connection = ref<ConnectionState>("checking");
+const view = ref<"research" | "knowledge">("research");
+const focusKnowledgeId = ref("");
+const knowledgeOpenNumber = ref(0);
+
+function openKnowledge(id = ""): void {
+  focusKnowledgeId.value = id;
+  knowledgeOpenNumber.value += 1;
+  view.value = "knowledge";
+}
 
 async function checkConnection(): Promise<void> {
   connection.value = "checking";
@@ -40,6 +50,12 @@ onMounted(checkConnection);
       </div>
     </header>
 
+    <nav class="app-navigation" aria-label="侧栏功能">
+      <button type="button" :disabled="view === 'research'" @click="view = 'research'">研究提问</button>
+      <button type="button" :disabled="view === 'knowledge'" @click="openKnowledge()">我的知识</button>
+    </nav>
+
+    <div v-show="view === 'research'">
     <section class="card">
       <p class="eyebrow">本地服务</p>
       <h2>本地服务状态</h2>
@@ -74,7 +90,15 @@ onMounted(checkConnection);
       @clear="clearConfirmed"
     />
 
-    <ResearchRun :confirmed="confirmed" />
+    <ResearchRun :confirmed="confirmed" @saved="openKnowledge" />
+    </div>
+
+    <KnowledgeManager
+      v-if="view === 'knowledge'"
+      :key="knowledgeOpenNumber"
+      :focus-id="focusKnowledgeId"
+      @back="view = 'research'"
+    />
 
     <footer>ResearchFlow · 本地开发版</footer>
   </main>

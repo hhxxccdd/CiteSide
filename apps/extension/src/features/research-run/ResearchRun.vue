@@ -5,6 +5,7 @@ import { runResearch, type ResearchResult } from "./researchApi";
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
 
 const props = defineProps<{ confirmed: PageSelection | null }>();
+const emit = defineEmits<{ saved: [id: string] }>();
 
 const question = ref("");
 const result = ref<ResearchResult | null>(null);
@@ -157,6 +158,7 @@ async function submit(): Promise<void> {
         :question="submittedQuestion"
         :source-title="submittedContext.title"
         :source-url="submittedContext.url"
+        @saved="emit('saved', $event)"
       />
     </div>
   </section>
