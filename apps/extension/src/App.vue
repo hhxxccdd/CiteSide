@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useSelectionPreview } from "./features/page-context/useSelectionPreview";
 import SelectionPreview from "./features/page-context/SelectionPreview.vue";
+import ResearchRun from "./features/research-run/ResearchRun.vue";
 
 const {
   page,
@@ -41,8 +42,8 @@ onMounted(checkConnection);
 
     <section class="card">
       <p class="eyebrow">本地服务</p>
-      <h2>选区预览已可使用</h2>
-      <p class="description">提问和知识库功能还在开发中。</p>
+      <h2>本地服务状态</h2>
+      <p class="description">确认一段网页文字后，可以在侧栏提问。</p>
       <div class="status">
         <span class="dot" :class="connection" />
         <span v-if="connection === 'checking'">正在检查本地服务…</span>
@@ -72,6 +73,8 @@ onMounted(checkConnection);
       @ignore="ignorePreview"
       @clear="clearConfirmed"
     />
+
+    <ResearchRun :confirmed="confirmed" />
 
     <footer>ResearchFlow · 本地开发版</footer>
   </main>

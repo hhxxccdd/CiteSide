@@ -39,3 +39,20 @@ button.secondary:hover { background: #f5f7f6; }
   overflow-wrap: anywhere;
   line-height: 1.6;
 }
+.research-card { margin-top: 14px; }
+.research-card form { display: grid; gap: 9px; }
+.research-card label { font-size: 13px; font-weight: 600; }
+.research-card textarea { width: 100%; padding: 10px; border: 1px solid #b9d2c7; border-radius: 9px; font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
+.research-card textarea:focus-visible { outline: 2px solid #287462; outline-offset: 2px; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+.result-state, .error-message { margin-top: 14px; }
+.error-message, .source-warning { color: #a34332; font-size: 13px; line-height: 1.5; }
+.research-result { border-top: 1px solid #dde7e2; margin-top: 20px; padding-top: 18px; }
+.research-result h2:not(:first-child) { margin-top: 20px; }
+.answer-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; font-size: 14px; }
+.source-item { border: 1px solid #dde7e2; border-radius: 9px; margin-top: 9px; padding: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.source-item summary { cursor: pointer; font-weight: 600; }
+.source-item a { color: #195c4d; }
+.source-item ul { margin-bottom: 0; padding-left: 18px; }
+.source-item li + li { margin-top: 6px; }
+.source-heading { margin: 0; font-weight: 600; }
