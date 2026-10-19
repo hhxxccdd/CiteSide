@@ -32,6 +32,8 @@ export interface QwenAssistantMessage {
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
+export type QwenToolChoice = 'auto' | { type: 'function'; function: { name: string } };
+
 type QwenResponse = {
   usage?: QwenAssistantMessage['usage'];
   choices?: Array<{
@@ -60,13 +62,18 @@ export class QwenClient {
   async chatWithTools(
     messages: QwenMessage[],
     tools: readonly QwenToolDefinition[],
+    toolChoice: QwenToolChoice = 'auto',
   ): Promise<QwenAssistantMessage> {
-    return this.request(messages, tools);
+    if (toolChoice !== 'auto' && !tools.some(tool => tool.function.name === toolChoice.function.name)) {
+      throw new Error('指定工具不在本次允许的工具列表中');
+    }
+    return this.request(messages, tools, toolChoice);
   }
 
   private async request(
     messages: QwenMessage[],
     tools?: readonly QwenToolDefinition[],
+    toolChoice: QwenToolChoice = 'auto',
   ): Promise<QwenAssistantMessage> {
     const maxOutputTokens = Number(this.config.get('QWEN_MAX_OUTPUT_TOKENS') ?? 8192);
     if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1) {
@@ -89,7 +96,7 @@ export class QwenClient {
         messages,
         stream: false,
         max_tokens: maxOutputTokens,
-        ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
+        ...(tools?.length ? { tools, tool_choice: toolChoice } : {}),
       }),
       signal: AbortSignal.timeout(120_000),
     });

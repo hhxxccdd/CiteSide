@@ -18,6 +18,7 @@ import {
   ReadWebPageTool,
 } from "./tools/read-web-page.tool";
 import { webSourceId } from "./research-sources";
+import { finalAnswerMessages, INSUFFICIENT_EVIDENCE_ANSWER, isPendingToolRequest } from "./research-answer-policy";
 
 export interface ToolAnswer {
   answer: string;
@@ -52,18 +53,16 @@ export class ResearchToolRunner {
     // 关闭联网时，直接走无工具请求；模型没有进入联网执行分支的机会。
     if (allowWebSearch !== true) {
       return {
-        answer: await this.qwen.chat(messages), webSources: [], webSearchFailed: false,
+        answer: await this.finalAnswer(messages), webSources: [], webSearchFailed: false,
         readPage: null, webPageReadFailed: false,
       };
     }
-    const decision = await this.qwen.chatWithTools(messages, [
-      WEB_SEARCH_DEFINITION,
-    ]);
+    const decision = await this.chooseTool(messages, WEB_SEARCH_DEFINITION);
     if (!decision.tool_calls?.length) {
       return {
-        answer: this.requireAnswer(decision),
+        answer: isPendingToolRequest(decision.content) ? INSUFFICIENT_EVIDENCE_ANSWER : this.requireAnswer(decision),
         webSources: [],
-        webSearchFailed: false,
+        webSearchFailed: isPendingToolRequest(decision.content),
         readPage: null,
         webPageReadFailed: false,
       };
@@ -139,20 +138,18 @@ export class ResearchToolRunner {
   ): Promise<PageAnswer> {
     if (!sources.length) {
       return {
-        answer: await this.qwen.chat(messages),
+        answer: await this.finalAnswer(messages),
         readPage: null,
         webPageReadFailed: false,
       };
     }
 
-    const decision = await this.qwen.chatWithTools(messages, [
-      this.pageReadToolFor(sources),
-    ]);
+    const decision = await this.chooseTool(messages, this.pageReadToolFor(sources));
     if (!decision.tool_calls?.length) {
       return {
-        answer: this.requireAnswer(decision),
+        answer: isPendingToolRequest(decision.content) ? INSUFFICIENT_EVIDENCE_ANSWER : this.requireAnswer(decision),
         readPage: null,
-        webPageReadFailed: false,
+        webPageReadFailed: isPendingToolRequest(decision.content),
       };
     }
 
@@ -205,10 +202,31 @@ export class ResearchToolRunner {
     }
 
     return {
-      answer: await this.qwen.chat(messages),
+      answer: await this.finalAnswer(messages),
       readPage,
       webPageReadFailed,
     };
+  }
+
+  private async chooseTool(messages: QwenMessage[], tool: QwenToolDefinition): Promise<QwenAssistantMessage> {
+    const decision = await this.qwen.chatWithTools(messages, [tool]);
+    if (decision.tool_calls?.length || !isPendingToolRequest(decision.content)) return decision;
+    this.logger.warn(`${tool.function.name}: 模型返回执行指令但没有 tool_calls，补一次工具请求`);
+    try {
+      return await this.qwen.chatWithTools([
+        ...messages,
+        { role: "assistant", content: decision.content ?? null },
+        { role: "system", content: "你刚才表示需要执行工具，却只输出了文字。本次请返回指定工具的 tool_calls 与合法参数，不要要求用户替你执行。" },
+      ], [tool], { type: "function", function: { name: tool.function.name } });
+    } catch {
+      // 补请求失败也不能把原来的执行指令当成已经完成的回答。
+      return decision;
+    }
+  }
+
+  private async finalAnswer(messages: QwenMessage[]): Promise<string> {
+    const answer = await this.qwen.chat(finalAnswerMessages(messages));
+    return isPendingToolRequest(answer) ? INSUFFICIENT_EVIDENCE_ANSWER : answer;
   }
 
   private pageReadToolFor(sources: WebSearchSource[]): QwenToolDefinition {

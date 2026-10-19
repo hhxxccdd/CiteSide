@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import MarkdownIt = require("markdown-it");
 import { QwenClient, type QwenMessage } from "../llm/qwen.client";
 import type { ResearchSource } from "./research-sources";
+import { INSUFFICIENT_EVIDENCE_ANSWER, isPendingToolRequest } from "./research-answer-policy";
 
 @Injectable()
 export class ResearchCitationsService {
@@ -11,7 +12,8 @@ export class ResearchCitationsService {
   constructor(private readonly qwen: QwenClient) {}
 
   async ensureCitations(answer: string, messages: QwenMessage[], sources: ResearchSource[]): Promise<string> {
-    if (!sources.length || this.hasCitation(answer, sources)) return answer;
+    const fallback = isPendingToolRequest(answer) ? INSUFFICIENT_EVIDENCE_ANSWER : answer;
+    if (!sources.length || this.hasCitation(answer, sources)) return fallback;
 
     // 只尝试一次；缺少标记不等于可以把任意资料硬接到原回答上。
     try {
@@ -20,6 +22,7 @@ export class ResearchCitationsService {
         { role: "assistant", content: answer },
         { role: "system", content:
           "上一份回答没有可识别的正文引用。请依据前文实际取得的正文、笔记和工具结果重新整理回答。" +
+          "当前只是引用整理阶段，工具执行已经结束。不能要求再搜索、调用工具或让用户替你执行搜索。" +
           "核心事实使用自然文字引用，格式必须为 [有来源支持的结论][sourceId]，例如 [类型收窄][S1]，不能只写来源编号。" +
           "不要仅为满足格式把来源硬贴到旧句子上；找不到支持的统计数字、百分比、薪资或具体招聘结论，应删除并说明无法确认。" +
           "只读取到了文章或搜索摘要，不代表核实了行业统计；不能声称全部结论已经核实。" +
@@ -28,11 +31,11 @@ export class ResearchCitationsService {
           "可用来源标识及阅读状态：" + JSON.stringify(sources.map(({ id, title, evidence }) => ({ sourceId: id, title, evidence }))),
         },
       ]);
-      if (revised.trim()) return revised;
+      if (revised.trim() && !isPendingToolRequest(revised)) return revised;
     } catch {
       this.logger.warn("回答引用整理未完成，保留原回答，由界面提示缺少正文引用");
     }
-    return answer;
+    return fallback;
   }
 
   private hasCitation(answer: string, sources: ResearchSource[]): boolean {
