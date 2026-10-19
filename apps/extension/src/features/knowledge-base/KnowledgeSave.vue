@@ -7,7 +7,6 @@ const props = defineProps<{
   question: string;
   sourceTitle: string;
   sourceUrl: string;
-  sourceDefinitions?: string;
 }>();
 const emit = defineEmits<{ saved: [id: string] }>();
 
@@ -30,7 +29,7 @@ async function save(): Promise<void> {
   try {
     savedId.value = await createKnowledgeEntry({
       title: title.value.trim(),
-      content: [props.sourceDefinitions, content.value.trim()].filter(Boolean).join("\n\n"),
+      content: content.value.trim(),
       originalQuestion: props.question,
       sourceTitle: props.sourceTitle,
       sourceUrl: props.sourceUrl,

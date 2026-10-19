@@ -109,8 +109,8 @@ onUnmounted(() => {
 .markdown-body :deep(tr:last-child td) { border-bottom: 0; }
 .markdown-body :deep(hr) { margin: 22px 0; border: 0; border-top: 1px solid #e2eae5; }
 .markdown-body :deep(a) { color: #176a55; text-underline-offset: 3px; }
-.markdown-body :deep(.answer-citation) { display: inline-block; margin: 0 2px; padding: 0 4px; border-radius: 4px; background: #e7f2e9; color: #176a55; font-size: 10px; font-weight: 700; line-height: 1.6; vertical-align: super; text-decoration: none; }
-.markdown-body :deep(.answer-citation:hover), .markdown-body :deep(.answer-citation:focus-visible) { background: #176a55; color: white; }
+.markdown-body :deep(.answer-citation) { border-radius: 2px; color: #176a55; text-decoration: underline dotted #77aa8c; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.markdown-body :deep(.answer-citation:hover), .markdown-body :deep(.answer-citation:focus-visible) { background: #e7f2e9; text-decoration-style: solid; }
 .citation-preview { position: fixed; z-index: 20; max-height: min(300px, calc(100vh - 24px)); overflow-y: auto; padding: 15px; border: 1px solid #c8dfcf; border-radius: 12px; background: #fff; box-shadow: 0 10px 36px #1539272b; color: #324c3e; font: 12px/1.6 'Segoe UI', 'Microsoft YaHei', sans-serif; overflow-wrap: anywhere; }
 .citation-kind { display: block; margin-bottom: 5px; color: #277766; font-size: 10px; font-weight: 700; }
 .citation-preview strong { display: block; font-size: 13px; }

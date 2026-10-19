@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import AnswerContent from "../research-run/AnswerContent.vue";
+import { editableMarkdown } from "../research-run/answerMarkdown";
 import {
   deleteKnowledgeEntry,
   getKnowledgeEntry,
@@ -55,7 +56,7 @@ async function openEntry(id: string): Promise<void> {
 function startEditing(): void {
   if (!selected.value) return;
   title.value = selected.value.title;
-  content.value = selected.value.content;
+  content.value = editableMarkdown(selected.value.content);
   editing.value = true;
   confirmingDelete.value = false;
   error.value = "";

@@ -11,15 +11,81 @@ export function webUrl(value: string): string | null {
   }
 }
 
-// Reference definitions are ordinary Markdown, so saved notes keep usable links.
-export function sourceDefinitions(sources: ResearchSource[]): string {
+const SOURCE_ID = "(?:S1|[NW][1-9]\\d*)";
+
+function sourceDefinitions(sources: ResearchSource[]): string {
   return sources.flatMap((source) => {
     const url = webUrl(source.url);
     if (!url || !/^(S1|[NW][1-9]\d*)$/.test(source.id)) return [];
     const safeUrl = url.replace(/</g, "%3C").replace(/>/g, "%3E");
-    const title = source.title.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]/g, " ");
-    return [`[${source.id}]: <${safeUrl}> "${title}"`];
+    return [`[${source.id}]: <${safeUrl}> "rf-source:${source.id}"`];
   }).join("\n");
+}
+
+function outsideCode(markdown: string, transform: (text: string) => string): string {
+  const parser = new MarkdownIt();
+  const offsets = [0];
+  for (let index = 0; index < markdown.length; index += 1) {
+    if (markdown[index] === "\n") offsets.push(index + 1);
+  }
+  const blocks = parser.parse(markdown, {}).filter((token) =>
+    (token.type === "fence" || token.type === "code_block") && token.map);
+  let output = "";
+  let start = 0;
+  for (const block of blocks) {
+    const from = offsets[block.map![0]];
+    const to = offsets[block.map![1]] ?? markdown.length;
+    output += transform(markdown.slice(start, from)) + markdown.slice(from, to);
+    start = to;
+  }
+  return output + transform(markdown.slice(start));
+}
+
+// Editing and saving use ordinary named links, so implementation IDs stay hidden.
+export function editableMarkdown(markdown: string, sources: ResearchSource[] = []): string {
+  const env: { references?: Record<string, { href: string; title: string }> } = {};
+  new MarkdownIt().parse(markdown, env);
+  const links = new Map<string, { url: string; title: string }>();
+  for (const [id, reference] of Object.entries(env.references ?? {})) {
+    if (new RegExp(`^${SOURCE_ID}$`).test(id) && webUrl(reference.href)) {
+      links.set(id, { url: reference.href, title: reference.title.startsWith("rf-source:") ? "查看来源" : reference.title || "查看来源" });
+    }
+  }
+  for (const source of sources) {
+    if (webUrl(source.url)) links.set(source.id, { url: source.url, title: source.title });
+  }
+  const namedLink = (id: string, label?: string): string => {
+    const source = links.get(id);
+    if (!source) return label ?? "";
+    const text = label ?? source.title.replace(/[[\]\\]/g, "");
+    const url = webUrl(source.url)!.replace(/</g, "%3C").replace(/>/g, "%3E");
+    return `[${text}](<${url}>)`;
+  };
+  return outsideCode(markdown, (text) => {
+    const prose = text.replace(new RegExp(`^ {0,3}\\[${SOURCE_ID}\\]:[^\\n]*(?:\\n|$)`, "gm"), "");
+    const edits: Array<{ from: number; to: number; value: string }> = [];
+    const parser = new MarkdownIt();
+    parser.inline.ruler.before("link", "editable_source", (state, silent) => {
+      if (silent || state.src[state.pos] !== "[") return false;
+      const end = state.md.helpers.parseLinkLabel(state, state.pos, true);
+      if (end < 0) return false;
+      const label = state.src.slice(state.pos + 1, end);
+      const suffix = state.src.slice(end + 1);
+      const reference = new RegExp(`^\\[(${SOURCE_ID})\\]`).exec(suffix);
+      const shortcut = new RegExp(`^${SOURCE_ID}$`).test(label) && !/^[(:\[]/.test(suffix);
+      if (!reference && !shortcut) return false;
+      const to = end + 1 + (reference?.[0].length ?? 0);
+      const value = namedLink(reference?.[1] ?? label, reference ? label : undefined);
+      edits.push({ from: state.pos, to, value });
+      state.push("text", "", 0).content = value;
+      state.pos = to;
+      return true;
+    });
+    parser.inline.parse(prose, parser, env, []);
+    let result = prose;
+    for (const edit of edits.reverse()) result = result.slice(0, edit.from) + edit.value + result.slice(edit.to);
+    return result;
+  }).trim();
 }
 
 export function renderAnswer(markdown: string, sources: ResearchSource[] = []) {
@@ -30,7 +96,7 @@ export function renderAnswer(markdown: string, sources: ResearchSource[] = []) {
   md.inline.ruler.before("html_inline", "safe_line_break", (state, silent) => {
     const match = /^<br\s*\/?>/i.exec(state.src.slice(state.pos));
     if (!match) return false;
-    if (!silent) state.push("softbreak", "br", 0).type = "hardbreak";
+    if (!silent) state.push("hardbreak", "br", 0);
     state.pos += match[0].length;
     return true;
   });
@@ -42,18 +108,34 @@ export function renderAnswer(markdown: string, sources: ResearchSource[] = []) {
       const children = block.children ?? [];
       for (let index = 0; index < children.length; index += 1) {
         const open = children[index];
-        const text = children[index + 1];
-        const close = children[index + 2];
-        if (open.type !== "link_open" || text?.type !== "text" || close?.type !== "link_close") continue;
-        const sourceIndex = sources.findIndex((source) => source.id === text.content &&
+        if (open.type !== "link_open") continue;
+        const title = String(open.attrGet("title") ?? "");
+        const id = title.startsWith("rf-source:") ? title.slice("rf-source:".length) : null;
+        const sourceIndex = sources.findIndex((source) => source.id === id &&
           webUrl(source.url) !== null && webUrl(source.url) === webUrl(String(open.attrGet("href") ?? "")));
-        if (sourceIndex < 0) continue;
         const source = sources[sourceIndex];
-        open.attrSet("class", "answer-citation");
-        open.attrSet("data-source-id", source.id);
-        open.attrSet("aria-label", `来源 ${sourceIndex + 1}：${source.title}`);
-        text.content = `[${sourceIndex + 1}]`;
-        cited.add(source.id);
+        const text = children[index + 1];
+        if (text?.type === "text" && children[index + 2]?.type === "link_close" &&
+            new RegExp(`^${SOURCE_ID}$`).test(text.content)) {
+          text.content = source?.title ?? (id ? "查看来源" : title || "查看来源");
+        }
+        if (id) open.attrs = open.attrs?.filter(([name]) => name !== "title") ?? null;
+        if (source) {
+          open.attrSet("class", "answer-citation");
+          open.attrSet("data-source-id", source.id);
+          open.attrSet("aria-label", `引用来源：${source.title}`);
+          cited.add(source.id);
+        }
+      }
+      let inLink = false;
+      for (const token of children) {
+        if (token.type === "link_open") inLink = true;
+        if (token.type === "link_close") inLink = false;
+        if (token.type === "text" && !inLink) {
+          token.content = token.content
+            .replace(new RegExp(`\\[([^\\]]+)\\]\\[${SOURCE_ID}\\]`, "g"), "$1")
+            .replace(new RegExp(`\\[${SOURCE_ID}\\]`, "g"), "");
+        }
       }
     }
   });

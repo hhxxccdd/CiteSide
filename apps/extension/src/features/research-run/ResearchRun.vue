@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { PageSelection } from "../page-context/useSelectionPreview";
 import { runResearch, type ResearchResult } from "./researchApi";
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
 import AnswerContent from "./AnswerContent.vue";
-import { sourceDefinitions } from "./answerMarkdown";
+import { editableMarkdown } from "./answerMarkdown";
+import { loadCompletedResearch, saveCompletedResearch } from "./researchSession";
 
 const props = defineProps<{ confirmed: PageSelection | null }>();
 const emit = defineEmits<{ saved: [id: string] }>();
@@ -16,28 +17,45 @@ const submittedQuestion = ref("");
 const completedRun = ref(0);
 const pending = ref(false);
 const error = ref("");
+const restoring = ref(true);
+const sessionNotice = ref("");
 const citedSourceIds = ref<string[]>([]);
 const sources = computed(() => result.value?.sources ?? []);
-const noteDefinitions = computed(() => sourceDefinitions(sources.value.filter((source) => citedSourceIds.value.includes(source.id))));
+const noteContent = computed(() => editableMarkdown(result.value?.answer ?? "", sources.value));
 let controller: AbortController | null = null;
 let requestNumber = 0;
+let activeContext: PageSelection | null = null;
 
 watch(() => props.confirmed, (selection) => {
-  if (selection?.tabId === submittedContext.value?.tabId &&
-      selection?.url === submittedContext.value?.url &&
-      selection?.text === submittedContext.value?.text) return;
+  if (!pending.value || (selection?.tabId === activeContext?.tabId &&
+      selection?.url === activeContext?.url &&
+      selection?.text === activeContext?.text)) return;
   requestNumber += 1;
   controller?.abort();
   controller = null;
   pending.value = false;
-  result.value = null;
-  citedSourceIds.value = [];
-  submittedContext.value = null;
-  submittedQuestion.value = "";
-  error.value = "";
+  activeContext = null;
+  error.value = "网页或选区已变化，本次提问已中断。已完成的回答仍然保留。";
 });
 
-onUnmounted(() => controller?.abort());
+onMounted(async () => {
+  try {
+    const saved = await loadCompletedResearch();
+    if (saved) {
+      result.value = saved.result;
+      submittedContext.value = saved.context;
+      submittedQuestion.value = saved.question;
+      question.value = saved.question;
+      completedRun.value += 1;
+    }
+  } catch {
+    sessionNotice.value = "上次回答暂时无法恢复。";
+  } finally {
+    restoring.value = false;
+  }
+});
+
+onUnmounted(() => { requestNumber += 1; controller?.abort(); });
 
 function isWebUrl(url: string): boolean {
   try {
@@ -50,7 +68,7 @@ function isWebUrl(url: string): boolean {
 async function submit(): Promise<void> {
   const selection = props.confirmed;
   const text = question.value.trim();
-  if (pending.value || !selection || !text) return;
+  if (pending.value || restoring.value || !selection || !text) return;
 
   error.value = "";
   let tab: chrome.tabs.Tab | undefined;
@@ -61,7 +79,8 @@ async function submit(): Promise<void> {
     return;
   }
   if (!tab || tab.id !== selection.tabId || tab.url !== selection.url ||
-      props.confirmed !== selection) {
+      props.confirmed?.tabId !== selection.tabId || props.confirmed?.url !== selection.url ||
+      props.confirmed?.text !== selection.text) {
     error.value = "当前网页或选区已经变化，请重新确认文字。";
     return;
   }
@@ -70,10 +89,7 @@ async function submit(): Promise<void> {
   controller = new AbortController();
   const currentRequest = ++requestNumber;
   pending.value = true;
-  result.value = null;
-  citedSourceIds.value = [];
-  submittedContext.value = selection;
-  submittedQuestion.value = text;
+  activeContext = selection;
 
   try {
     const answer = await runResearch(text, {
@@ -84,7 +100,17 @@ async function submit(): Promise<void> {
     }, controller.signal);
     if (currentRequest === requestNumber) {
       result.value = answer;
+      submittedContext.value = selection;
+      submittedQuestion.value = text;
       completedRun.value += 1;
+      pending.value = false;
+      activeContext = null;
+      sessionNotice.value = "";
+      try {
+        await saveCompletedResearch({ question: text, context: selection, result: answer });
+      } catch {
+        if (currentRequest === requestNumber) sessionNotice.value = "回答已显示，但暂存失败。关闭侧栏后可能无法恢复。";
+      }
     }
   } catch (cause) {
     if (currentRequest === requestNumber) {
@@ -96,6 +122,7 @@ async function submit(): Promise<void> {
     if (currentRequest === requestNumber) {
       pending.value = false;
       controller = null;
+      activeContext = null;
     }
   }
 }
@@ -112,11 +139,11 @@ async function submit(): Promise<void> {
       <textarea
         id="research-question"
         v-model="question"
-        :disabled="pending"
+        :disabled="pending || restoring"
         :placeholder="confirmed ? '例如：这段话在实际开发中怎么用？' : '先确认上方的网页选区，再输入问题'"
         rows="4"
       />
-      <button type="submit" class="primary-button submit-button" :disabled="!confirmed || !question.trim() || pending">
+      <button type="submit" class="primary-button submit-button" :disabled="!confirmed || !question.trim() || pending || restoring">
         {{ pending ? "正在研究，请稍候…" : "开始研究 →" }}
       </button>
     </form>
@@ -125,6 +152,7 @@ async function submit(): Promise<void> {
       <span>正在查找资料并生成回答，完成后会显示在这里。</span>
     </div>
     <p v-if="error" class="error-message" role="alert">{{ error }}</p>
+    <p v-if="sessionNotice" class="source-note" role="status">{{ sessionNotice }}</p>
 
     <div v-if="result && submittedContext" class="research-result">
       <div class="result-heading">
@@ -134,15 +162,16 @@ async function submit(): Promise<void> {
           <h2>给你的回答</h2>
         </div>
       </div>
+      <p class="answer-context">针对“{{ submittedContext.title }}” · {{ submittedQuestion }}</p>
       <AnswerContent class="answer-text" :content="result.answer" :sources="sources" @citations-changed="citedSourceIds = $event" />
 
       <details class="source-group">
         <summary>查看参考资料 <span>{{ sources.length }} 项</span></summary>
-        <p class="source-note">已引用表示正文使用了该编号；是否真正支持结论，请查看片段或原网页核对。</p>
-        <p v-if="!sources.length" class="source-note">本次未返回来源编号，无法生成行内引用。请确认后端已更新。</p>
-        <details v-for="(source, index) in sources" :key="source.id" class="source-item">
+        <p class="source-note">把鼠标放在正文带下划线的引用文字上，即可查看来源。是否支持结论，请核对原文。</p>
+        <p v-if="!sources.length" class="source-note">本次没有可预览的来源信息。</p>
+        <details v-for="source in sources" :key="source.id" class="source-item">
           <summary>
-            <span class="source-type">[{{ index + 1 }}] {{ source.kind === 'selection' ? '当前选区' : source.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
+            <span class="source-type">{{ source.kind === 'selection' ? '当前选区' : source.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
             {{ source.title }}
             <span v-if="citedSourceIds.includes(source.id)" class="cited-tag">已引用</span>
           </summary>
@@ -158,11 +187,10 @@ async function submit(): Promise<void> {
 
       <KnowledgeSave
         :key="completedRun"
-        :answer="result.answer"
+        :answer="noteContent"
         :question="submittedQuestion"
         :source-title="submittedContext.title"
         :source-url="submittedContext.url"
-        :source-definitions="noteDefinitions"
         @saved="emit('saved', $event)"
       />
     </div>
@@ -181,6 +209,7 @@ async function submit(): Promise<void> {
 .result-heading h2 { margin: 3px 0 0; }
 .result-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: #e6f3e8; color: #20835e; font-size: 19px; }
 .answer-text { margin: 16px 0; }
+.answer-context { margin: 12px 0 0; color: #7b8d83; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .source-group { border-top: 1px solid #e7eee8; padding-top: 12px; }
 .source-group > summary { display: flex; align-items: center; gap: 7px; cursor: pointer; color: #285f52; font-size: 12px; font-weight: 700; }
 .source-group > summary::before { content: '+'; color: #7fa18d; }
