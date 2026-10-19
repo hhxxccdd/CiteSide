@@ -2,7 +2,6 @@ import { Injectable, Logger } from "@nestjs/common";
 import MarkdownIt = require("markdown-it");
 import { QwenClient, type QwenMessage } from "../llm/qwen.client";
 import type { ResearchSource } from "./research-sources";
-import { INSUFFICIENT_EVIDENCE_ANSWER, isPendingToolRequest } from "./research-answer-policy";
 
 @Injectable()
 export class ResearchCitationsService {
@@ -12,8 +11,7 @@ export class ResearchCitationsService {
   constructor(private readonly qwen: QwenClient) {}
 
   async ensureCitations(answer: string, messages: QwenMessage[], sources: ResearchSource[]): Promise<string> {
-    const fallback = isPendingToolRequest(answer) ? INSUFFICIENT_EVIDENCE_ANSWER : answer;
-    if (!sources.length || this.hasCitation(answer, sources)) return fallback;
+    if (!sources.length || this.hasCitation(answer, sources)) return answer;
 
     // 只尝试一次；缺少标记不等于可以把任意资料硬接到原回答上。
     try {
@@ -31,11 +29,11 @@ export class ResearchCitationsService {
           "可用来源标识及阅读状态：" + JSON.stringify(sources.map(({ id, title, evidence }) => ({ sourceId: id, title, evidence }))),
         },
       ]);
-      if (revised.trim() && !isPendingToolRequest(revised)) return revised;
+      if (revised.trim()) return revised;
     } catch {
       this.logger.warn("回答引用整理未完成，保留原回答，由界面提示缺少正文引用");
     }
-    return fallback;
+    return answer;
   }
 
   private hasCitation(answer: string, sources: ResearchSource[]): boolean {
