@@ -25,6 +25,7 @@ export interface ResearchResult {
   webSearchFailed: boolean;
   readPage: { title: string; url: string; text: string } | null;
   webPageReadFailed: boolean;
+  webPageReadError?: { title: string; url: string; reason: string };
 }
 
 export interface ResearchSource {

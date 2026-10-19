@@ -9,7 +9,7 @@ import {
 } from "./tools/read-current-context.tool";
 import { SearchKnowledgeBaseTool } from "./tools/search-knowledge-base.tool";
 import { WebSearchSource } from "./tools/web-search.tool";
-import { ReadWebPageResult } from "./tools/read-web-page.tool";
+import { ReadWebPageResult, WebPageReadError } from "./tools/read-web-page.tool";
 import { createResearchSources, noteSourceId, pageSourceId, ResearchSource } from "./research-sources";
 import { ResearchContextService, type ResearchNote } from "./research-context.service";
 import type { ResearchInput, ResearchOptions } from "./dto/research-input.dto";
@@ -27,6 +27,7 @@ export interface ResearchResult {
   webSearchFailed: boolean;
   readPage: ReadWebPageResult | null;
   webPageReadFailed: boolean;
+  webPageReadError?: WebPageReadError;
 }
 
 interface KnowledgeLookup {

@@ -240,7 +240,9 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
       </details>
       <p v-if="result.knowledgeSearchFailed" class="source-warning">个人笔记检索失败。</p>
       <p v-if="result.webSearchFailed" class="source-warning">联网搜索失败。</p>
-      <p v-if="result.webPageReadFailed" class="source-warning">网页原文读取失败。</p>
+      <p v-if="result.webPageReadFailed" class="source-warning" role="status">
+        网页原文读取失败<span v-if="result.webPageReadError">：{{ result.webPageReadError.title }}。{{ result.webPageReadError.reason }}</span><span v-else>。</span>
+      </p>
 
       <KnowledgeSave
         :key="completedRun"

@@ -16,6 +16,7 @@ import {
   READ_WEB_PAGE_DEFINITION,
   ReadWebPageResult,
   ReadWebPageTool,
+  WebPageReadError,
 } from "./tools/read-web-page.tool";
 import { webSourceId } from "./research-sources";
 
@@ -25,6 +26,7 @@ export interface ToolAnswer {
   webSearchFailed: boolean;
   readPage: ReadWebPageResult | null;
   webPageReadFailed: boolean;
+  webPageReadError?: WebPageReadError;
 }
 
 interface WebSearchStep {
@@ -36,6 +38,7 @@ interface PageAnswer {
   answer: string;
   readPage: ReadWebPageResult | null;
   webPageReadFailed: boolean;
+  webPageReadError?: WebPageReadError;
 }
 
 @Injectable()
@@ -80,6 +83,7 @@ export class ResearchToolRunner {
       webSearchFailed: search.failed,
       readPage: pageAnswer.readPage,
       webPageReadFailed: pageAnswer.webPageReadFailed,
+      webPageReadError: pageAnswer.webPageReadError,
     };
   }
 
@@ -110,7 +114,7 @@ export class ResearchToolRunner {
           const result = await this.performWebSearch(call);
           sources = result.sources;
           toolResult = {
-            ...result,
+            notice: "这里只提供搜索候选的标题和网址，尚未读取网页正文。标题和网址不能支持具体事实或统计；需要原文时调用 read_web_page。",
             sources: result.sources.map((source, index) => ({ ...source, sourceId: webSourceId(index) })),
           };
         } catch {
@@ -165,6 +169,7 @@ export class ResearchToolRunner {
 
     let readPage: ReadWebPageResult | null = null;
     let webPageReadFailed = false;
+    let webPageReadError: WebPageReadError | undefined;
     let readAttempted = false;
 
     for (const call of toolCalls) {
@@ -175,23 +180,29 @@ export class ResearchToolRunner {
         toolResult = { error: "本次问答最多阅读一篇网页" };
       } else {
         readAttempted = true;
+        let source: WebSearchSource | undefined;
         try {
           const sourceIndex = this.parseSourceIndex(call, sources.length);
-          const url = sources[sourceIndex - 1].url;
+          source = sources[sourceIndex - 1];
           readPage = await this.readWebPage.execute({
-            url,
+            url: source.url,
             allowedUrls: sources.map((source) => source.url),
           });
           toolResult = { ...readPage, sourceId: webSourceId(sourceIndex - 1) };
         } catch (error) {
+          webPageReadError = {
+            title: source?.title ?? "本次网页",
+            url: source?.url ?? "",
+            reason: error instanceof Error ? error.message : "网页读取发生未知错误",
+          };
           this.logger.warn(
-            "read_web_page failed: " +
-              (error instanceof Error ? error.message : String(error)),
+            `read_web_page failed: ${webPageReadError.url} — ${webPageReadError.reason}`,
           );
           webPageReadFailed = true;
           toolResult = {
+            ...webPageReadError,
             error:
-              "网页阅读失败。搜索摘要未经核实，不要据此断言事实；" +
+              "网页阅读失败。搜索候选的标题和网址不等于正文证据，不要据此断言事实；" +
               "仅根据网页正文和个人笔记回答，不足时说明无法确认。",
           };
         }
@@ -208,6 +219,7 @@ export class ResearchToolRunner {
       answer: await this.qwen.chat(messages),
       readPage,
       webPageReadFailed,
+      webPageReadError,
     };
   }
 
