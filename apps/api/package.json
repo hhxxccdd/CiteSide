@@ -6,7 +6,8 @@
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/main.js"
+    "start:prod": "node dist/main.js",
+    "test:research-stream": "node --test test/research-stream.test.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -14,6 +15,7 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "cheerio": "^1.2.0",
+    "eventsource-parser": "^4.1.2",
     "markdown-it": "^15.0.3",
     "pg": "^8.16.0",
     "reflect-metadata": "^0.2.2",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
+    "@types/express": "^5.0.6",
     "@types/markdown-it": "^14.2.0",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.15.0",

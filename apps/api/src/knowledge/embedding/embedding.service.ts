@@ -9,7 +9,8 @@ type EmbeddingResponse = {
 export class EmbeddingService {
   constructor(private readonly config: ConfigService) {}
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, signal?: AbortSignal): Promise<number[]> {
+    signal?.throwIfAborted();
     const input = text.trim();
 
     if (!input) {
@@ -33,7 +34,7 @@ export class EmbeddingService {
             dimensions:1024,
             encoding_format:'float'
         }),
-        signal:AbortSignal.timeout(30_000)
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000)
     })
 
     if(!response.ok){

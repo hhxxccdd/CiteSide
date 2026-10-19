@@ -30,7 +30,7 @@ export class SearchKnowledgeBaseTool {
   async execute(args: {
     query: string;
     pageContext?: string
-  }): Promise<KnowledgeSearchResult[]> {
-    return this.knowledge.search(args.query, args.pageContext);
+  }, signal?: AbortSignal): Promise<KnowledgeSearchResult[]> {
+    return this.knowledge.search(args.query, args.pageContext, signal);
   }
 }

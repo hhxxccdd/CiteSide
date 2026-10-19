@@ -38,9 +38,10 @@ export class ReadWebPageTool {
   async execute(args: {
     url: string;
     allowedUrls: readonly string[];
-  }): Promise<ReadWebPageResult> {
+  }, signal?: AbortSignal): Promise<ReadWebPageResult> {
+    signal?.throwIfAborted();
     const url = this.validateUrl(args.url, args.allowedUrls);
-    const html = await this.downloadHtml(url);
+    const html = await this.downloadHtml(url, signal);
     const $ = cheerio.load(html);
 
     const title =
@@ -119,13 +120,14 @@ export class ReadWebPageTool {
     return url;
   }
 
-  private async downloadHtml(url: URL): Promise<string> {
+  private async downloadHtml(url: URL, requestSignal?: AbortSignal): Promise<string> {
     const maxBytes = 1_000_000; // 最多下载约 1 MB
-    const signal = AbortSignal.timeout(10_000);
+    const signal = requestSignal ? AbortSignal.any([requestSignal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000);
     try {
       const response = await this.fetchHtml(url, signal);
       return await this.readHtml(response, maxBytes);
     } catch (error) {
+      requestSignal?.throwIfAborted();
       if (signal.aborted) throw new Error("网页读取超过 10 秒，请稍后重试");
       if (error instanceof TypeError) throw new Error("无法连接该网站，请检查网络或在浏览器中打开原文");
       throw error;

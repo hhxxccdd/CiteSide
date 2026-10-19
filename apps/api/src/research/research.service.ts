@@ -14,6 +14,7 @@ import { createResearchSources, noteSourceId, pageSourceId, ResearchSource } fro
 import { ResearchContextService, type ResearchNote } from "./research-context.service";
 import type { ResearchInput, ResearchOptions } from "./dto/research-input.dto";
 import { ResearchCitationsService } from "./research-citations.service";
+import { ResearchExecution, researchStep } from "./research-execution";
 
 export interface ResearchResult {
   runId: string;
@@ -45,18 +46,21 @@ export class ResearchService {
     private readonly citations: ResearchCitationsService,
   ) {}
 
-  async run(input: ResearchInput): Promise<ResearchResult> {
+  async run(input: ResearchInput, execution?: ResearchExecution): Promise<ResearchResult> {
+    execution?.emit({ type: "run.started" });
     const question = input.question?.trim();
     if (!question || (!input.materials.pages.length && !input.materials.noteIds.length && !input.options.searchKnowledgeBase && !input.options.allowWebSearch)) {
       throw new BadRequestException("问题和资料范围不能为空");
     }
 
-    const runId = randomUUID();
+    const runId = execution?.runId ?? randomUUID();
     const options = { ...input.options };
     const pages = input.materials.pages.map((page) => this.readCurrentContext.execute(page));
-    const specifiedNotes = await this.contexts.specifiedNotes(input.materials.noteIds);
+    const specifiedNotes = input.materials.noteIds.length
+      ? await researchStep(execution, "读取指定笔记", () => this.contexts.specifiedNotes(input.materials.noteIds, execution?.signal))
+      : [];
     const knowledge = options.searchKnowledgeBase
-      ? await this.findRelevantNotes(question, pages.map((page) => page.title).join(" / "))
+      ? await this.findRelevantNotes(question, pages.map((page) => page.title).join(" / "), execution)
       : { notes: [], failed: false };
     const notes = this.contexts.mergeNotes(specifiedNotes, knowledge.notes);
     if (!pages.length && !notes.length && !options.allowWebSearch) {
@@ -68,9 +72,11 @@ export class ResearchService {
       };
     }
     const messages = this.buildMessages(question, pages, notes, knowledge.failed, options);
-    const toolAnswer = await this.toolRunner.answer(messages, options.allowWebSearch);
+    execution?.signal.throwIfAborted();
+    const toolAnswer = await this.toolRunner.answer(messages, options.allowWebSearch, execution);
     const sources = createResearchSources(pages, notes, toolAnswer.webSources, toolAnswer.readPage);
-    const answer = await this.citations.ensureCitations(toolAnswer.answer, messages, sources);
+    const answer = await this.citations.ensureCitations(toolAnswer.answer, messages, sources, execution);
+    execution?.signal.throwIfAborted();
 
     return {
       runId, options,
@@ -86,14 +92,16 @@ export class ResearchService {
   private async findRelevantNotes(
     question: string,
     pageTitle: string,
+    execution?: ResearchExecution,
   ): Promise<KnowledgeLookup> {
     try {
-      const notes = await this.searchKnowledgeBase.execute({
+      const notes = await researchStep(execution, "搜索个人知识库", () => this.searchKnowledgeBase.execute({
         query: question,
         pageContext: pageTitle,
-      });
+      }, execution?.signal), (result) => result.length ? `找到 ${result.length} 条相关笔记` : "没有找到相关笔记");
       return { notes, failed: false };
     } catch {
+      execution?.signal.throwIfAborted();
       return { notes: [], failed: true };
     }
   }

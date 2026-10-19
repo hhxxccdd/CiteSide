@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import MarkdownIt = require("markdown-it");
 import { QwenClient, type QwenMessage } from "../llm/qwen.client";
 import type { ResearchSource } from "./research-sources";
+import { ResearchExecution, researchStep } from "./research-execution";
 
 @Injectable()
 export class ResearchCitationsService {
@@ -10,12 +11,12 @@ export class ResearchCitationsService {
 
   constructor(private readonly qwen: QwenClient) {}
 
-  async ensureCitations(answer: string, messages: QwenMessage[], sources: ResearchSource[]): Promise<string> {
+  async ensureCitations(answer: string, messages: QwenMessage[], sources: ResearchSource[], execution?: ResearchExecution): Promise<string> {
     if (!sources.length || this.hasCitation(answer, sources)) return answer;
 
     // 只尝试一次；缺少标记不等于可以把任意资料硬接到原回答上。
     try {
-      const revised = await this.qwen.chat([
+      const revised = await researchStep(execution, "整理回答引用", () => this.qwen.chat([
         ...messages,
         { role: "assistant", content: answer },
         { role: "system", content:
@@ -27,9 +28,10 @@ export class ResearchCitationsService {
           "如果现有资料都不能支持问题，就直接说明资料不足，无需强行引用。只输出最终回答。" +
           "可用来源标识及阅读状态：" + JSON.stringify(sources.map(({ id, title, evidence }) => ({ sourceId: id, title, evidence }))),
         },
-      ]);
+      ], { signal: execution?.signal }));
       if (revised.trim()) return revised;
     } catch {
+      execution?.signal.throwIfAborted();
       this.logger.warn("回答引用整理未完成，保留原回答，由界面提示缺少正文引用");
     }
     return answer;

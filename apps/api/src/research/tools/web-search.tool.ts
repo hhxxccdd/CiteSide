@@ -46,7 +46,8 @@ interface DashScopeSearchResponse {
 export class WebSearchTool {
   constructor(private readonly config: ConfigService) {}
 
-  async execute(args: { query: string }): Promise<WebSearchResult> {
+  async execute(args: { query: string }, signal?: AbortSignal): Promise<WebSearchResult> {
+    signal?.throwIfAborted();
     const query = args.query.trim();
     if (!query) {
       throw new BadRequestException('联网搜索内容不能为空');
@@ -86,7 +87,7 @@ export class WebSearchTool {
           result_format: 'message',
         },
       }),
-      signal: AbortSignal.timeout(90_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000),
     });
 
     if (!response.ok) {

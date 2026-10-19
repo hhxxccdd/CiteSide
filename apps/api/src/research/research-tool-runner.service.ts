@@ -19,6 +19,7 @@ import {
   WebPageReadError,
 } from "./tools/read-web-page.tool";
 import { webSourceId } from "./research-sources";
+import { ResearchExecution, researchStep } from "./research-execution";
 
 export interface ToolAnswer {
   answer: string;
@@ -51,17 +52,17 @@ export class ResearchToolRunner {
     private readonly readWebPage: ReadWebPageTool,
   ) {}
 
-  async answer(messages: QwenMessage[], allowWebSearch = false): Promise<ToolAnswer> {
+  async answer(messages: QwenMessage[], allowWebSearch = false, execution?: ResearchExecution): Promise<ToolAnswer> {
     // 关闭联网时，直接走无工具请求；模型没有进入联网执行分支的机会。
     if (allowWebSearch !== true) {
       return {
-        answer: await this.qwen.chat(messages), webSources: [], webSearchFailed: false,
+        answer: await this.generateAnswer(messages, execution), webSources: [], webSearchFailed: false,
         readPage: null, webPageReadFailed: false,
       };
     }
-    const decision = await this.qwen.chatWithTools(messages, [
+    const decision = await researchStep(execution, "判断是否需要联网", () => this.qwen.chatWithTools(messages, [
       WEB_SEARCH_DEFINITION,
-    ]);
+    ], execution?.answerOptions()));
     if (!decision.tool_calls?.length) {
       return {
         answer: this.requireAnswer(decision),
@@ -72,10 +73,12 @@ export class ResearchToolRunner {
       };
     }
 
-    const search = await this.runWebSearchCalls(messages, decision);
+    execution?.emit({ type: "answer.reset" });
+    const search = await this.runWebSearchCalls(messages, decision, execution);
     const pageAnswer = await this.answerWithOptionalPageRead(
       messages,
       search.sources,
+      execution,
     );
     return {
       answer: pageAnswer.answer,
@@ -90,6 +93,7 @@ export class ResearchToolRunner {
   private async runWebSearchCalls(
     messages: QwenMessage[],
     decision: QwenAssistantMessage,
+    execution?: ResearchExecution,
   ): Promise<WebSearchStep> {
     const toolCalls = decision.tool_calls ?? [];
     messages.push({
@@ -111,13 +115,15 @@ export class ResearchToolRunner {
       } else {
         searched = true;
         try {
-          const result = await this.performWebSearch(call);
+          const result = await researchStep(execution, "联网搜索", () => this.performWebSearch(call, execution?.signal),
+            (result) => `返回 ${result.sources.length} 条搜索结果`);
           sources = result.sources;
           toolResult = {
             ...result,
             sources: result.sources.map((source, index) => ({ ...source, sourceId: webSourceId(index) })),
           };
         } catch {
+          execution?.signal.throwIfAborted();
           failed = true;
           toolResult = { error: "联网搜索失败，请根据已有资料回答并说明限制" };
         }
@@ -132,26 +138,27 @@ export class ResearchToolRunner {
     return { sources, failed };
   }
 
-  private async performWebSearch(call: QwenToolCall): Promise<WebSearchResult> {
+  private async performWebSearch(call: QwenToolCall, signal?: AbortSignal): Promise<WebSearchResult> {
     const query = this.parseSearchQuery(call);
-    return this.webSearch.execute({ query });
+    return this.webSearch.execute({ query }, signal);
   }
 
   private async answerWithOptionalPageRead(
     messages: QwenMessage[],
     sources: WebSearchSource[],
+    execution?: ResearchExecution,
   ): Promise<PageAnswer> {
     if (!sources.length) {
       return {
-        answer: await this.qwen.chat(messages),
+        answer: await this.generateAnswer(messages, execution),
         readPage: null,
         webPageReadFailed: false,
       };
     }
 
-    const decision = await this.qwen.chatWithTools(messages, [
+    const decision = await researchStep(execution, "判断是否需要阅读原文", () => this.qwen.chatWithTools(messages, [
       this.pageReadToolFor(sources),
-    ]);
+    ], execution?.answerOptions()));
     if (!decision.tool_calls?.length) {
       return {
         answer: this.requireAnswer(decision),
@@ -161,6 +168,7 @@ export class ResearchToolRunner {
     }
 
     const toolCalls = decision.tool_calls;
+    execution?.emit({ type: "answer.reset" });
     messages.push({
       role: "assistant",
       content: decision.content ?? null,
@@ -182,14 +190,18 @@ export class ResearchToolRunner {
         readAttempted = true;
         let source: WebSearchSource | undefined;
         try {
-          const sourceIndex = this.parseSourceIndex(call, sources.length);
-          source = sources[sourceIndex - 1];
-          readPage = await this.readWebPage.execute({
-            url: source.url,
-            allowedUrls: sources.map((source) => source.url),
-          });
+          let sourceIndex = 0;
+          readPage = await researchStep(execution, "读取网页原文", async () => {
+            sourceIndex = this.parseSourceIndex(call, sources.length);
+            source = sources[sourceIndex - 1];
+            return this.readWebPage.execute({
+              url: source.url,
+              allowedUrls: sources.map((source) => source.url),
+            }, execution?.signal);
+          }, (page) => page.title);
           toolResult = { ...readPage, sourceId: webSourceId(sourceIndex - 1) };
         } catch (error) {
+          execution?.signal.throwIfAborted();
           webPageReadError = {
             title: source?.title ?? "本次网页",
             url: source?.url ?? "",
@@ -216,11 +228,15 @@ export class ResearchToolRunner {
     }
 
     return {
-      answer: await this.qwen.chat(messages),
+      answer: await this.generateAnswer(messages, execution),
       readPage,
       webPageReadFailed,
       webPageReadError,
     };
+  }
+
+  private generateAnswer(messages: QwenMessage[], execution?: ResearchExecution): Promise<string> {
+    return researchStep(execution, "生成回答", () => this.qwen.chat(messages, execution?.answerOptions()));
   }
 
   private pageReadToolFor(sources: WebSearchSource[]): QwenToolDefinition {

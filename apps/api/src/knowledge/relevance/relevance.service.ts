@@ -15,6 +15,7 @@ export class RelevanceService {
     question: string,
     pageContext: string,
     candidates: KnowledgeCandidate[],
+    signal?: AbortSignal,
   ): Promise<string[]> {
     if (candidates.length === 0) {
       return [];
@@ -34,7 +35,7 @@ export class RelevanceService {
         role: "user",
         content: JSON.stringify({ question, pageContext, candidates }),
       },
-    ]);
+    ], { signal });
 
     let data: unknown;
     try {

@@ -159,7 +159,9 @@ export class KnowledgeService {
   async search(
     question: string,
     pageContext = "",
+    signal?: AbortSignal,
   ): Promise<KnowledgeSearchResult[]> {
+    signal?.throwIfAborted();
     const text = question.trim();
     if (!text) {
       throw new BadRequestException("搜索问题不能为空");
@@ -170,7 +172,8 @@ export class KnowledgeService {
       ? `问题：${text}\n网页背景：${context}`
       : text;
 
-    const vector = await this.embedding.embed(retrievalText);
+    const vector = await this.embedding.embed(retrievalText, signal);
+    signal?.throwIfAborted();
     const vectorText = `[${vector.join(",")}]`;
     const model = this.config.getOrThrow<string>("EMBEDDING_MODEL");
 
@@ -189,6 +192,8 @@ export class KnowledgeService {
       [vectorText, model],
     );
 
+    signal?.throwIfAborted();
+
     const candidates = result.rows.map(({ id, title, content }) => ({
       id,
       title,
@@ -199,6 +204,7 @@ export class KnowledgeService {
       text,
       context,
       candidates,
+      signal,
     );
     const selectedSet = new Set(selectedIds);
 
