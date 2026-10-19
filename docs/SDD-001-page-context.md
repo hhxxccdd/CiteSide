@@ -50,6 +50,8 @@ tabs 用于标题和网址等信息，不等于正文权限；activeTab 也不�
         CurrentPageCard.vue         当前页、授权与添加按钮
       background/index.ts           图标和标签页事件，不放提取算法
 
+实际还增加 pageContentScript.ts，作为注入网页的独立构建入口，接收读取消息并调用提取函数。pageContextApi.ts 负责注入后发送请求；普通网页脚本不能直接导入侧栏里的 Vue 文件。
+
 旧 watchSelection.ts、useSelectionPreview.ts、SelectionPreview.vue 在新流程连通后一起移除，清理旧选区存储键。不先删旧入口导致无法演示。资料清单和任务状态不放进提取文件。
 
 ## 完成后怎么检查

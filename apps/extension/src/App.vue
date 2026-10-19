@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useSelectionPreview } from "./features/page-context/useSelectionPreview";
 import SelectionPreview from "./features/page-context/SelectionPreview.vue";
+import CurrentPageCard from "./features/page-context/CurrentPageCard.vue";
 import ResearchRun from "./features/research-run/ResearchRun.vue";
 import KnowledgeManager from "./features/knowledge-base/KnowledgeManager.vue";
 
@@ -9,7 +10,6 @@ const {
   page,
   preview,
   confirmed,
-  unavailable,
   confirmPreview,
   ignorePreview,
   clearConfirmed,
@@ -65,20 +65,7 @@ onMounted(checkConnection);
     </nav>
 
     <div v-show="view === 'research'" class="workspace-body">
-      <section class="panel page-panel">
-        <div class="panel-heading">
-          <span class="step-number">01</span>
-          <span class="eyebrow">当前网页</span>
-        </div>
-        <template v-if="page">
-          <h2>{{ page.title }}</h2>
-          <p class="selection-url">{{ page.url }}</p>
-        </template>
-        <p v-else-if="unavailable" class="description">
-          此页面无法读取，请打开普通网页后再试。
-        </p>
-        <p v-else class="description">正在读取当前网页…</p>
-      </section>
+      <CurrentPageCard />
 
       <SelectionPreview
         v-if="page"
@@ -123,8 +110,6 @@ onMounted(checkConnection);
 .app-navigation button:hover { background: #e8eeea; }
 .app-navigation button.active { background: var(--surface); color: #175a4f; box-shadow: 0 2px 9px #1d443116; }
 .workspace-body { padding: 2px 18px 30px; }
-.page-panel h2 { margin: 0 0 5px; font-size: 16px; }
-.selection-url { margin: 0; color: #85938d; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 @media (max-width: 360px) {
   .workspace-head { padding-inline: 18px; }
   .workspace-body, .app-navigation { padding-inline: 12px; }
