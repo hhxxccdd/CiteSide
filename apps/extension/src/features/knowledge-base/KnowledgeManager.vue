@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import AnswerContent from "../research-run/AnswerContent.vue";
 import {
   deleteKnowledgeEntry,
   getKnowledgeEntry,
@@ -152,7 +153,7 @@ onMounted(async () => {
     <div v-if="selected" class="panel knowledge-detail">
       <div class="panel-heading"><span class="eyebrow">笔记详情</span></div>
       <h2>{{ selected.title }}</h2>
-      <p v-if="!editing" class="knowledge-content">{{ selected.content }}</p>
+      <AnswerContent v-if="!editing" class="knowledge-content" :content="selected.content" />
       <div class="context-box detail-meta">
         <p><strong>原问题</strong>{{ selected.originalQuestion }}</p>
         <p><strong>来源</strong>{{ selected.sourceTitle }}</p>
@@ -210,7 +211,7 @@ onMounted(async () => {
 .list-item-arrow { position: absolute; top: 14px; right: 13px; color: #7caa91; }
 .knowledge-detail { margin-top: 18px; padding: 18px; }
 .knowledge-detail h2 { font-size: 17px; }
-.knowledge-content { max-height: 300px; overflow: auto; margin: 0 0 16px; color: #40564a; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.knowledge-content { max-height: 400px; overflow: auto; margin: 0 0 16px; }
 .detail-meta a { display: inline-block; margin-top: 7px; font-size: 11px; text-decoration: none; }
 .detail-meta .updated-at { margin-top: 8px; color: #9aa89d; font-size: 10px; }
 .knowledge-edit { margin-top: 16px; }

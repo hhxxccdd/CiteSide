@@ -50,4 +50,4 @@
 
 先完成选区和知识库问答，再接入按需联网与网页阅读，随后完成来源卡片、保存前编辑、流式进度和停止重试。每一步都用固定的技术文章验证。最后能演示：**选区提问 → 核对来源 → 编辑并保存 → 换一种问法找回笔记**。
 
-实现细节见 [SDD-001](SDD-001-page-context.md)、[SDD-002](SDD-002-single-task-agent.md) 和 [SDD-003](SDD-003-knowledge-base.md)。
+实现细节见 [SDD-001](SDD-001-page-context.md)、[SDD-002](SDD-002-single-task-agent.md)、[SDD-003](SDD-003-knowledge-base.md) 和 [SDD-004](SDD-004-answer-rendering-and-citations.md)。

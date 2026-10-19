@@ -17,6 +17,7 @@ import {
   ReadWebPageResult,
   ReadWebPageTool,
 } from "./tools/read-web-page.tool";
+import { webSourceId } from "./research-sources";
 
 export interface ToolAnswer {
   answer: string;
@@ -101,7 +102,10 @@ export class ResearchToolRunner {
         try {
           const result = await this.performWebSearch(call);
           sources = result.sources;
-          toolResult = result;
+          toolResult = {
+            ...result,
+            sources: result.sources.map((source, index) => ({ ...source, sourceId: webSourceId(index) })),
+          };
         } catch {
           failed = true;
           toolResult = { error: "联网搜索失败，请根据已有资料回答并说明限制" };
@@ -171,7 +175,7 @@ export class ResearchToolRunner {
             url,
             allowedUrls: sources.map((source) => source.url),
           });
-          toolResult = readPage;
+          toolResult = { ...readPage, sourceId: webSourceId(sourceIndex - 1) };
         } catch (error) {
           this.logger.warn(
             "read_web_page failed: " +

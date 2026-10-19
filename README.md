@@ -2,7 +2,7 @@
 
 Chrome 侧栏扩展与本地 API 的项目骨架。产品范围见 [PRD](docs/PRD.md)。
 数据库选型及与 MySQL 的取舍见 [数据库选型说明](docs/database-choice.md)。
-选区与侧栏预览设计见 [SDD-001](docs/SDD-001-page-context.md)，单次提问任务设计见 [SDD-002](docs/SDD-002-single-task-agent.md)，知识库设计见 [SDD-003](docs/SDD-003-knowledge-base.md)。
+选区与侧栏预览设计见 [SDD-001](docs/SDD-001-page-context.md)，单次提问任务设计见 [SDD-002](docs/SDD-002-single-task-agent.md)，知识库设计见 [SDD-003](docs/SDD-003-knowledge-base.md)，回答排版与正文引用见 [SDD-004](docs/SDD-004-answer-rendering-and-citations.md)。
 
 ## 目录
 

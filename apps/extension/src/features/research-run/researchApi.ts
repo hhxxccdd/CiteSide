@@ -7,6 +7,7 @@ export interface ResearchContext {
 
 export interface ResearchResult {
   answer: string;
+  sources: ResearchSource[];
   retrievedNotes: Array<{
     id: string;
     title: string;
@@ -20,6 +21,15 @@ export interface ResearchResult {
   webSearchFailed: boolean;
   readPage: { title: string; url: string; text: string } | null;
   webPageReadFailed: boolean;
+}
+
+export interface ResearchSource {
+  id: string;
+  kind: "selection" | "note" | "web";
+  title: string;
+  url: string;
+  excerpt: string;
+  evidence: "selection" | "note" | "search-result" | "page-text";
 }
 
 export async function runResearch(
@@ -48,5 +58,5 @@ export async function runResearch(
     throw new Error("本地服务返回的回答格式不正确。请重试。");
   }
 
-  return result as ResearchResult;
+  return { ...result, sources: "sources" in result && Array.isArray(result.sources) ? result.sources : [] } as ResearchResult;
 }

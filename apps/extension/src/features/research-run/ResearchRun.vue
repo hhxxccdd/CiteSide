@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import type { PageSelection } from "../page-context/useSelectionPreview";
 import { runResearch, type ResearchResult } from "./researchApi";
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
+import AnswerContent from "./AnswerContent.vue";
+import { sourceDefinitions } from "./answerMarkdown";
 
 const props = defineProps<{ confirmed: PageSelection | null }>();
 const emit = defineEmits<{ saved: [id: string] }>();
@@ -14,6 +16,9 @@ const submittedQuestion = ref("");
 const completedRun = ref(0);
 const pending = ref(false);
 const error = ref("");
+const citedSourceIds = ref<string[]>([]);
+const sources = computed(() => result.value?.sources ?? []);
+const noteDefinitions = computed(() => sourceDefinitions(sources.value.filter((source) => citedSourceIds.value.includes(source.id))));
 let controller: AbortController | null = null;
 let requestNumber = 0;
 
@@ -26,6 +31,7 @@ watch(() => props.confirmed, (selection) => {
   controller = null;
   pending.value = false;
   result.value = null;
+  citedSourceIds.value = [];
   submittedContext.value = null;
   submittedQuestion.value = "";
   error.value = "";
@@ -65,6 +71,7 @@ async function submit(): Promise<void> {
   const currentRequest = ++requestNumber;
   pending.value = true;
   result.value = null;
+  citedSourceIds.value = [];
   submittedContext.value = selection;
   submittedQuestion.value = text;
 
@@ -127,35 +134,23 @@ async function submit(): Promise<void> {
           <h2>给你的回答</h2>
         </div>
       </div>
-      <p class="answer-text">{{ result.answer }}</p>
+      <AnswerContent class="answer-text" :content="result.answer" :sources="sources" @citations-changed="citedSourceIds = $event" />
 
       <details class="source-group">
-        <summary>查看参考资料 <span>{{ 1 + result.retrievedNotes.length + result.webSources.length + (result.readPage ? 1 : 0) }} 项</span></summary>
-        <p class="source-note">这些资料进入了回答流程，不代表回答逐条引用了它们。</p>
-        <details class="source-item">
-          <summary><span class="source-type">当前选区</span>{{ submittedContext.title }}</summary>
-          <p class="selection-text">{{ submittedContext.text }}</p>
-          <a v-if="isWebUrl(submittedContext.url)" :href="submittedContext.url" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
+        <summary>查看参考资料 <span>{{ sources.length }} 项</span></summary>
+        <p class="source-note">已引用表示正文使用了该编号；是否真正支持结论，请查看片段或原网页核对。</p>
+        <p v-if="!sources.length" class="source-note">本次未返回来源编号，无法生成行内引用。请确认后端已更新。</p>
+        <details v-for="(source, index) in sources" :key="source.id" class="source-item">
+          <summary>
+            <span class="source-type">[{{ index + 1 }}] {{ source.kind === 'selection' ? '当前选区' : source.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
+            {{ source.title }}
+            <span v-if="citedSourceIds.includes(source.id)" class="cited-tag">已引用</span>
+          </summary>
+          <p v-if="source.evidence === 'search-result'" class="source-note">搜索结果 · 原文未核对</p>
+          <p v-else-if="source.evidence === 'page-text'" class="source-note">已读取网页正文</p>
+          <p v-if="source.excerpt" class="selection-text">{{ source.excerpt }}</p>
+          <a v-if="isWebUrl(source.url)" :href="source.url" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
         </details>
-        <details v-for="note in result.retrievedNotes" :key="note.id" class="source-item">
-          <summary><span class="source-type">个人笔记</span>{{ note.title }}</summary>
-          <p class="selection-text">{{ note.content }}</p>
-          <a v-if="isWebUrl(note.sourceUrl)" :href="note.sourceUrl" target="_blank" rel="noopener noreferrer">打开原网页 · {{ note.sourceTitle }} ↗</a>
-        </details>
-        <details v-if="result.readPage" class="source-item">
-          <summary><span class="source-type">已阅读网页</span>{{ result.readPage.title }}</summary>
-          <p class="selection-text">{{ result.readPage.text }}</p>
-          <a v-if="isWebUrl(result.readPage.url)" :href="result.readPage.url" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
-        </details>
-        <div v-if="result.webSources.length" class="web-sources">
-          <p class="source-note">搜索结果 · 原文未必已阅读</p>
-          <ul>
-            <li v-for="source in result.webSources" :key="source.url">
-              <a v-if="isWebUrl(source.url)" :href="source.url" target="_blank" rel="noopener noreferrer">{{ source.title }} ↗</a>
-              <span v-else>{{ source.title }}</span>
-            </li>
-          </ul>
-        </div>
       </details>
       <p v-if="result.knowledgeSearchFailed" class="source-warning">个人笔记检索失败。</p>
       <p v-if="result.webSearchFailed" class="source-warning">联网搜索失败。</p>
@@ -167,6 +162,7 @@ async function submit(): Promise<void> {
         :question="submittedQuestion"
         :source-title="submittedContext.title"
         :source-url="submittedContext.url"
+        :source-definitions="noteDefinitions"
         @saved="emit('saved', $event)"
       />
     </div>
@@ -184,7 +180,7 @@ async function submit(): Promise<void> {
 .result-heading { display: flex; align-items: center; gap: 10px; }
 .result-heading h2 { margin: 3px 0 0; }
 .result-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: #e6f3e8; color: #20835e; font-size: 19px; }
-.answer-text { margin: 16px 0; color: #2e403b; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.answer-text { margin: 16px 0; }
 .source-group { border-top: 1px solid #e7eee8; padding-top: 12px; }
 .source-group > summary { display: flex; align-items: center; gap: 7px; cursor: pointer; color: #285f52; font-size: 12px; font-weight: 700; }
 .source-group > summary::before { content: '+'; color: #7fa18d; }
@@ -195,10 +191,8 @@ async function submit(): Promise<void> {
 .source-item summary { cursor: pointer; color: #38554b; font-weight: 600; line-height: 1.5; }
 .source-item .selection-text { padding: 9px 0; }
 .source-type { margin-right: 7px; color: #27836a; font-size: 10px; }
-.source-item a, .web-sources a { font-size: 11px; text-decoration: none; }
-.source-item a:hover, .web-sources a:hover { text-decoration: underline; }
-.web-sources { margin-top: 12px; }
-.web-sources ul { margin: 0; padding-left: 18px; }
-.web-sources li + li { margin-top: 7px; }
+.source-item a { font-size: 11px; text-decoration: none; }
+.source-item a:hover { text-decoration: underline; }
+.cited-tag { display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 4px; background: #e7f2e9; color: #277766; font-size: 10px; }
 @media (prefers-reduced-motion: reduce) { .working-indicator { animation: none; } }
 </style>
