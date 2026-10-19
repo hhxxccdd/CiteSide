@@ -1,21 +1,27 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { createKnowledgeEntry } from "./knowledgeApi";
+import type { KnowledgeDraft } from "./knowledgeDraft.types";
 
 const props = defineProps<{
   answer: string;
   question: string;
   sourceTitle: string;
   sourceUrl: string;
+  draft?: KnowledgeDraft | null;
 }>();
-const emit = defineEmits<{ saved: [id: string] }>();
+const emit = defineEmits<{ saved: [id: string]; "update:draft": [draft: KnowledgeDraft] }>();
 
-const editing = ref(false);
-const title = ref(props.question);
-const content = ref(props.answer);
+const editing = ref(props.draft?.editing ?? false);
+const title = ref(props.draft?.title ?? props.question);
+const content = ref(props.draft?.content ?? props.answer);
 const saving = ref(false);
-const savedId = ref("");
+const savedId = ref(props.draft?.savedId ?? "");
 const error = ref("");
+
+watch([editing, title, content, savedId], () => {
+  emit("update:draft", { editing: editing.value, title: title.value, content: content.value, savedId: savedId.value });
+});
 
 async function save(): Promise<void> {
   if (saving.value || savedId.value) return;

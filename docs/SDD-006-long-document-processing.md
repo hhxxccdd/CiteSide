@@ -68,7 +68,7 @@
       llm/qwen.client.ts                   全文请求、回答长度、实际用量和服务端错误
       main.ts                             JSON 请求大小设置
 
-已取消 model-budget.service.ts、相关分词依赖及预算配置。范围开关与 @ 多资料已实现，接下来完善草稿恢复并按 SDD-002 推进流式进度。
+已取消 model-budget.service.ts、相关分词依赖及预算配置。范围开关、@ 多资料和草稿恢复已实现，接下来按 SDD-002 推进流式进度。
 
 ## 怎样验收
 

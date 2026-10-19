@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, shallowRef } from "vue";
 import type { PageSnapshot } from "../page-context/pageContext.types";
 import { runResearch, type ResearchContext, type ResearchResult, type ResearchOptions } from "./researchApi";
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
@@ -9,7 +9,9 @@ import MaterialPicker from "../research-materials/MaterialPicker.vue";
 import MaterialList from "../research-materials/MaterialList.vue";
 import { useResearchMaterials } from "../research-materials/useResearchMaterials";
 import type { MaterialChoice } from "../research-materials/material.types";
-import { loadCompletedResearch, saveCompletedResearch } from "./researchSession";
+import type { CompletedResearch, ResearchWorkspace } from "./researchSession";
+import { useResearchWorkspace } from "./useResearchWorkspace";
+import type { KnowledgeDraft } from "../knowledge-base/knowledgeDraft.types";
 
 const props = defineProps<{ context: PageSnapshot | null }>();
 const emit = defineEmits<{ saved: [id: string]; openNote: [id: string] }>();
@@ -28,9 +30,11 @@ const requestPages = computed(() => materials.pages());
 const transferTooLarge = computed(() => requestPages.value.reduce((size, page) => size + new TextEncoder().encode(page.text).byteLength, 0) > 8 * 1024 * 1024);
 const completedRun = ref(0);
 const pending = ref(false);
+// 请求失败或页面卸载前，保留“未完成”标记；不能用 loading 状态代表任务已完成。
+const unfinishedRun = ref(false);
 const error = ref("");
-const restoring = ref(true);
-const sessionNotice = ref("");
+const completed = shallowRef<CompletedResearch | null>(null);
+const noteDraft = ref<KnowledgeDraft | null>(null);
 const citedSourceIds = ref<string[]>([]);
 const sources = computed(() => result.value?.sources ?? []);
 const noteContent = computed(() => editableMarkdown(result.value?.answer ?? "", sources.value));
@@ -47,35 +51,48 @@ const primarySource = computed(() => submittedPages.value[0] ?? sources.value.fi
   source.kind === "web" && source.evidence === "page-text") ?? null);
 let controller: AbortController | null = null;
 let requestNumber = 0;
-let disposed = false;
 
-onMounted(async () => {
-  try {
-    const saved = await loadCompletedResearch();
-    if (disposed) return;
-    if (saved) {
-      result.value = saved.result;
-      submittedPages.value = saved.pages.map((page) => ({ ...page, completeness: "full" as const }));
-      submittedQuestion.value = saved.question;
-      question.value = saved.question;
-      submittedOptions.value = saved.options ?? null;
-      if (saved.options) {
-        useCurrentPage.value = saved.usedCurrentPage;
-        searchKnowledgeBase.value = saved.options.searchKnowledgeBase;
-        allowWebSearch.value = saved.options.allowWebSearch;
-      }
-      materials.restore(saved.usedCurrentPage ? saved.pages.slice(1) : saved.pages, saved.result.specifiedNotes ?? []);
-      completedRun.value += 1;
-    }
-  } catch {
-    if (!disposed) sessionNotice.value = "上次回答暂时无法恢复。";
-  } finally {
-    if (!disposed) restoring.value = false;
-  }
+const { restoring, notice: sessionNotice, flush: flushWorkspace } = useResearchWorkspace({
+  capture: () => ({
+    draft: { question: question.value, useCurrentPage: useCurrentPage.value,
+      options: { searchKnowledgeBase: searchKnowledgeBase.value, allowWebSearch: allowWebSearch.value }, materials: items.value },
+    completed: completed.value,
+    noteDraft: result.value && noteDraft.value ? { runId: result.value.runId, value: noteDraft.value } : null,
+    unfinishedRun: unfinishedRun.value,
+  }),
+  restore: restoreWorkspace,
 });
 
+function restoreWorkspace(workspace: ResearchWorkspace): void {
+  const saved = workspace.completed;
+  completed.value = saved;
+  if (saved) {
+    result.value = saved.result;
+    submittedPages.value = saved.pages.map((page) => ({ ...page, completeness: "full" as const }));
+    submittedQuestion.value = saved.question;
+    question.value = saved.question;
+    submittedOptions.value = saved.options ?? null;
+    if (saved.options) {
+      useCurrentPage.value = saved.usedCurrentPage;
+      searchKnowledgeBase.value = saved.options.searchKnowledgeBase;
+      allowWebSearch.value = saved.options.allowWebSearch;
+    }
+    materials.restore(saved.usedCurrentPage ? saved.pages.slice(1) : saved.pages, saved.result.specifiedNotes ?? []);
+    completedRun.value += 1;
+  }
+  if (workspace.draft) {
+    question.value = workspace.draft.question;
+    useCurrentPage.value = workspace.draft.useCurrentPage;
+    searchKnowledgeBase.value = workspace.draft.options.searchKnowledgeBase;
+    allowWebSearch.value = workspace.draft.options.allowWebSearch;
+    items.value = workspace.draft.materials;
+  }
+  if (workspace.noteDraft?.runId === saved?.result.runId) noteDraft.value = workspace.noteDraft?.value ?? null;
+  if (workspace.unfinishedRun) error.value = "上次研究未完成，未自动重发。问题和资料已保留，可点击开始研究重试。";
+}
+
 // 切页不会卸载本组件，也不会修改已提交的正文快照。
-onUnmounted(() => { disposed = true; requestNumber += 1; controller?.abort(); });
+onUnmounted(() => { requestNumber += 1; controller?.abort(); });
 
 function isWebUrl(url: string): boolean {
   try { return ["http:", "https:"].includes(new URL(url).protocol); }
@@ -101,8 +118,11 @@ async function submit(): Promise<void> {
   controller = requestController;
   const currentRequest = ++requestNumber;
   pending.value = true;
+  unfinishedRun.value = true;
   error.value = "";
   try {
+    await flushWorkspace();
+    if (currentRequest !== requestNumber) return;
     if (page) {
       const currentWindow = await chrome.windows.getCurrent();
       const [tab] = await chrome.tabs.query({ active: true, windowId: currentWindow.id });
@@ -117,14 +137,12 @@ async function submit(): Promise<void> {
     submittedPages.value = pages;
     submittedQuestion.value = text;
     submittedOptions.value = options;
+    noteDraft.value = null;
+    completed.value = { question: text, pages: snapshots, usedCurrentPage, options, result: answer };
     completedRun.value += 1;
     pending.value = false;
-    sessionNotice.value = "";
-    try {
-      await saveCompletedResearch({ question: text, pages: snapshots, usedCurrentPage, options, result: answer });
-    } catch {
-      if (currentRequest === requestNumber) sessionNotice.value = "回答已显示，但暂存失败。关闭侧栏后可能无法恢复。";
-    }
+    unfinishedRun.value = false;
+    await flushWorkspace();
   } catch (cause) {
     if (currentRequest === requestNumber) {
       error.value = cause instanceof Error && cause.name !== "AbortError" ? cause.message : "提问已中断，请重试。";
@@ -186,7 +204,7 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
       <span>正在查找资料并生成回答，完成后会显示在这里。</span>
     </div>
     <p v-if="error" class="error-message" role="alert">{{ error }}</p>
-    <p v-if="sessionNotice" class="source-note" role="status">{{ sessionNotice }}</p>
+    <p v-if="sessionNotice" class="source-note" role="status">{{ sessionNotice }} <button type="button" class="text-button" @click="flushWorkspace">重试暂存</button></p>
 
     <MaterialPicker :open="pickerOpen" :selected-urls="selectedUrls" :selected-note-ids="noteIds" @close="pickerOpen = false" @select="selectMaterial" />
     <div v-if="result" class="research-result">
@@ -223,10 +241,12 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
 
       <KnowledgeSave
         :key="completedRun"
+        :draft="noteDraft"
         :answer="noteContent"
         :question="submittedQuestion"
         :source-title="primarySource?.title ?? ''"
         :source-url="primarySource?.url ?? ''"
+        @update:draft="noteDraft = $event"
         @saved="emit('saved', $event)"
       />
     </div>
