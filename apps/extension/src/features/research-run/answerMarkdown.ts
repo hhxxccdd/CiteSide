@@ -13,9 +13,14 @@ export function webUrl(value: string): string | null {
 
 const SOURCE_ID = "(?:S1|[NW][1-9]\\d*)";
 
+function sourceHref(source: ResearchSource): string | null {
+  return webUrl(source.url) ?? (source.kind === "note" && /^[1-9]\d{0,18}$/.test(source.noteId ?? "")
+    ? `#knowledge-note-${source.noteId}` : null);
+}
+
 function sourceDefinitions(sources: ResearchSource[]): string {
   return sources.flatMap((source) => {
-    const url = webUrl(source.url);
+    const url = sourceHref(source);
     if (!url || !/^(S1|[NW][1-9]\d*)$/.test(source.id)) return [];
     const safeUrl = url.replace(/</g, "%3C").replace(/>/g, "%3E");
     return [`[${source.id}]: <${safeUrl}> "rf-source:${source.id}"`];
@@ -91,7 +96,8 @@ export function editableMarkdown(markdown: string, sources: ResearchSource[] = [
 export function renderAnswer(markdown: string, sources: ResearchSource[] = []) {
   const cited = new Set<string>();
   const md = new MarkdownIt({ html: false, linkify: false, breaks: false });
-  md.validateLink = (value) => webUrl(value) !== null;
+  const noteLinks = new Set(sources.map(sourceHref).filter((href) => href?.startsWith("#knowledge-note-")));
+  md.validateLink = (value) => webUrl(value) !== null || noteLinks.has(value);
   // Only this harmless HTML spelling is accepted, including inside table cells.
   md.inline.ruler.before("html_inline", "safe_line_break", (state, silent) => {
     const match = /^<br\s*\/?>/i.exec(state.src.slice(state.pos));
@@ -111,8 +117,9 @@ export function renderAnswer(markdown: string, sources: ResearchSource[] = []) {
         if (open.type !== "link_open") continue;
         const title = String(open.attrGet("title") ?? "");
         const id = title.startsWith("rf-source:") ? title.slice("rf-source:".length) : null;
+        const href = String(open.attrGet("href") ?? "");
         const sourceIndex = sources.findIndex((source) => source.id === id &&
-          webUrl(source.url) !== null && webUrl(source.url) === webUrl(String(open.attrGet("href") ?? "")));
+          sourceHref(source) !== null && sourceHref(source) === (webUrl(href) ?? href));
         const source = sources[sourceIndex];
         const text = children[index + 1];
         if (text?.type === "text" && children[index + 2]?.type === "link_close" &&
@@ -140,8 +147,10 @@ export function renderAnswer(markdown: string, sources: ResearchSource[] = []) {
     }
   });
   md.renderer.rules.link_open = (tokens, index, options, _env, renderer) => {
-    tokens[index].attrSet("target", "_blank");
-    tokens[index].attrSet("rel", "noopener noreferrer");
+    if (!String(tokens[index].attrGet("href") ?? "").startsWith("#knowledge-note-")) {
+      tokens[index].attrSet("target", "_blank");
+      tokens[index].attrSet("rel", "noopener noreferrer");
+    }
     return renderer.renderToken(tokens, index, options);
   };
   const definitions = sourceDefinitions(sources);

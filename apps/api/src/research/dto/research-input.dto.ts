@@ -3,7 +3,13 @@ import type { CurrentPageContext } from "../tools/read-current-context.tool";
 
 export interface ResearchInput {
   question: string;
-  context: CurrentPageContext;
+  context: CurrentPageContext | null;
+  options: ResearchOptions;
+}
+
+export interface ResearchOptions {
+  searchKnowledgeBase: boolean;
+  allowWebSearch: boolean;
 }
 
 // 当前是单篇全文接口；@ 多资料接入时再迁移为 materials 列表。
@@ -13,8 +19,26 @@ export function parseResearchInput(value: unknown): ResearchInput {
   if (typeof input.question !== "string" || !input.question.trim() || input.question.length > 4000) {
     throw new BadRequestException("问题不能为空，且不能超过 4,000 字符");
   }
-  if (!input.context || typeof input.context !== "object") {
-    throw new BadRequestException("尚未取得网页正文，请重新读取");
+  const options: ResearchOptions = { searchKnowledgeBase: true, allowWebSearch: false };
+  if (input.options !== undefined) {
+    if (!input.options || typeof input.options !== "object" || Array.isArray(input.options)) {
+      throw new BadRequestException("资料范围格式不正确");
+    }
+    const scope = input.options as Record<string, unknown>;
+    if (typeof scope.searchKnowledgeBase !== "boolean" || typeof scope.allowWebSearch !== "boolean") {
+      throw new BadRequestException("知识库和联网开关必须是布尔值");
+    }
+    options.searchKnowledgeBase = scope.searchKnowledgeBase;
+    options.allowWebSearch = scope.allowWebSearch;
+  }
+  if (input.context === null || input.context === undefined) {
+    if (!options.searchKnowledgeBase && !options.allowWebSearch) {
+      throw new BadRequestException("请使用网页，或开启知识库搜索、联网中的至少一项");
+    }
+    return { question: input.question.trim(), context: null, options };
+  }
+  if (typeof input.context !== "object" || Array.isArray(input.context)) {
+    throw new BadRequestException("网页正文格式不正确，请重新读取");
   }
   const page = input.context as Record<string, unknown>;
   if (typeof page.title !== "string" || !page.title.trim() || page.title.length > 2000 ||
@@ -38,6 +62,7 @@ export function parseResearchInput(value: unknown): ResearchInput {
   }
   return {
     question: input.question.trim(),
+    options,
     context: { title: page.title.trim(), url: page.url, text: page.text,
       completeness: "full", capturedAt: page.capturedAt },
   };

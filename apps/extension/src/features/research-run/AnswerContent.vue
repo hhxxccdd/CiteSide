@@ -7,7 +7,7 @@ defineOptions({ inheritAttrs: false });
 const props = withDefaults(defineProps<{ content: string; sources?: ResearchSource[] }>(), {
   sources: () => [],
 });
-const emit = defineEmits<{ citationsChanged: [ids: string[]] }>();
+const emit = defineEmits<{ citationsChanged: [ids: string[]]; openNote: [id: string] }>();
 const rendered = computed(() => renderAnswer(props.content, props.sources));
 const active = ref<ResearchSource | null>(null);
 const previewStyle = ref<Record<string, string>>({});
@@ -61,6 +61,21 @@ function handleKey(event: KeyboardEvent): void {
   if (event.key === "Escape") close();
 }
 
+function openNote(id: string): void {
+  close();
+  emit("openNote", id);
+}
+
+function activateCitation(event: MouseEvent): void {
+  if (!(event.target instanceof Element)) return;
+  const anchor = event.target.closest<HTMLAnchorElement>("a[data-source-id]");
+  const source = props.sources.find((item) => item.id === anchor?.dataset.sourceId);
+  if (source?.kind === "note" && source.noteId && !webUrl(source.url)) {
+    event.preventDefault();
+    openNote(source.noteId);
+  }
+}
+
 onMounted(() => {
   window.addEventListener("keydown", handleKey);
   window.addEventListener("resize", positionPreview);
@@ -75,13 +90,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-bind="$attrs" class="markdown-body" @mouseover="showPreview" @mouseout="scheduleClose" @focusin="showPreview" @focusout="scheduleClose" v-html="rendered.html" />
+  <div v-bind="$attrs" class="markdown-body" @click="activateCitation" @mouseover="showPreview" @mouseout="scheduleClose" @focusin="showPreview" @focusout="scheduleClose" v-html="rendered.html" />
   <Teleport to="body">
     <aside v-if="active" class="citation-preview" :style="previewStyle" aria-label="引用来源预览" @mouseenter="keepOpen" @mouseleave="scheduleClose" @focusin="keepOpen" @focusout="scheduleClose">
       <span class="citation-kind">{{ active.kind === 'page' ? '网页正文' : active.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
       <strong>{{ active.title }}</strong>
       <p class="citation-evidence">{{ active.evidence === 'search-result' ? '搜索结果 · 原文未核对' : active.evidence === 'page-text' ? '已读取网页正文' : active.kind === 'note' ? '已保存的笔记片段' : '本次任务的原文' }}</p>
       <p v-if="active.excerpt" class="citation-excerpt">{{ active.excerpt }}</p>
+      <button v-if="active.noteId" type="button" class="text-button" @click="openNote(active.noteId)">查看笔记</button>
       <a v-if="webUrl(active.url)" :href="webUrl(active.url)!" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
       <p class="citation-url">{{ active.url }}</p>
     </aside>

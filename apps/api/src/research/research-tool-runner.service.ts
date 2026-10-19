@@ -48,7 +48,14 @@ export class ResearchToolRunner {
     private readonly readWebPage: ReadWebPageTool,
   ) {}
 
-  async answer(messages: QwenMessage[]): Promise<ToolAnswer> {
+  async answer(messages: QwenMessage[], allowWebSearch = false): Promise<ToolAnswer> {
+    // 关闭联网时，直接走无工具请求；模型没有进入联网执行分支的机会。
+    if (allowWebSearch !== true) {
+      return {
+        answer: await this.qwen.chat(messages), webSources: [], webSearchFailed: false,
+        readPage: null, webPageReadFailed: false,
+      };
+    }
     const decision = await this.qwen.chatWithTools(messages, [
       WEB_SEARCH_DEFINITION,
     ]);

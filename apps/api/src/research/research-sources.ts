@@ -10,6 +10,7 @@ export interface ResearchSource {
   url: string;
   excerpt: string;
   evidence: "note" | "search-result" | "page-text";
+  noteId?: string;
 }
 
 export function noteSourceId(index: number): string {
@@ -29,17 +30,17 @@ function sameUrl(left: string, right: string): boolean {
 }
 
 export function createResearchSources(
-  page: CurrentPageContext,
+  page: CurrentPageContext | null,
   notes: KnowledgeSearchResult[],
   webSources: WebSearchSource[],
   readPage: ReadWebPageResult | null,
 ): ResearchSource[] {
   return [
-    { id: "S1", kind: "page", title: page.title, url: page.url,
-      excerpt: page.text.slice(0, 1200), evidence: "page-text" },
+    ...(page ? [{ id: "S1", kind: "page" as const, title: page.title, url: page.url,
+      excerpt: page.text.slice(0, 1200), evidence: "page-text" as const }] : []),
     ...notes.map((note, index): ResearchSource => ({
       id: noteSourceId(index), kind: "note", title: note.title,
-      url: note.sourceUrl, excerpt: note.content.slice(0, 1200), evidence: "note",
+      url: note.sourceUrl, excerpt: note.content.slice(0, 1200), evidence: "note", noteId: note.id,
     })),
     ...webSources.map((source, index): ResearchSource => {
       const wasRead = readPage !== null && sameUrl(source.url, readPage.url);

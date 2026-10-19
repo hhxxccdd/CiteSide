@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { QwenMessage } from "../llm/qwen.client";
 import { KnowledgeSearchResult } from "../knowledge/Knowledge.service";
 import { ResearchToolRunner } from "./research-tool-runner.service";
@@ -10,9 +11,11 @@ import { SearchKnowledgeBaseTool } from "./tools/search-knowledge-base.tool";
 import { WebSearchSource } from "./tools/web-search.tool";
 import { ReadWebPageResult } from "./tools/read-web-page.tool";
 import { createResearchSources, noteSourceId, ResearchSource } from "./research-sources";
-import type { ResearchInput } from "./dto/research-input.dto";
+import type { ResearchInput, ResearchOptions } from "./dto/research-input.dto";
 
 export interface ResearchResult {
+  runId: string;
+  options: ResearchOptions;
   answer: string;
   sources: ResearchSource[];
   retrievedNotes: KnowledgeSearchResult[];
@@ -39,16 +42,29 @@ export class ResearchService {
   async run(input: ResearchInput): Promise<ResearchResult> {
     const question = input.question?.trim();
     const context = input.context;
-    if (!question || !context?.title || !context?.url || !context?.text) {
-      throw new BadRequestException("问题和完整网页正文不能为空");
+    if (!question || (!context && !input.options.searchKnowledgeBase && !input.options.allowWebSearch)) {
+      throw new BadRequestException("问题和资料范围不能为空");
     }
 
-    const currentPage = this.readCurrentContext.execute(context);
-    const knowledge = await this.findRelevantNotes(question, currentPage.title);
-    const messages = this.buildMessages(question, currentPage, knowledge);
-    const toolAnswer = await this.toolRunner.answer(messages);
+    const runId = randomUUID();
+    const options = { ...input.options };
+    const currentPage = context ? this.readCurrentContext.execute(context) : null;
+    const knowledge = options.searchKnowledgeBase
+      ? await this.findRelevantNotes(question, currentPage?.title ?? "")
+      : { notes: [], failed: false };
+    if (!currentPage && !knowledge.notes.length && !options.allowWebSearch) {
+      return {
+        runId, options,
+        answer: knowledge.failed ? "个人知识库暂时无法检索，请稍后重试。本次没有其他可用资料。" : "个人知识库中没有找到能支持回答的相关笔记。可以换个问法，或添加网页、允许联网后再问。",
+        sources: [], retrievedNotes: [], knowledgeSearchFailed: knowledge.failed,
+        webSources: [], webSearchFailed: false, readPage: null, webPageReadFailed: false,
+      };
+    }
+    const messages = this.buildMessages(question, currentPage, knowledge, options);
+    const toolAnswer = await this.toolRunner.answer(messages, options.allowWebSearch);
 
     return {
+      runId, options,
       ...toolAnswer,
       retrievedNotes: knowledge.notes,
       knowledgeSearchFailed: knowledge.failed,
@@ -73,16 +89,18 @@ export class ResearchService {
 
   private buildMessages(
     question: string,
-    currentPage: CurrentPageContext,
+    currentPage: CurrentPageContext | null,
     knowledge: KnowledgeLookup,
+    options: ResearchOptions,
   ): QwenMessage[] {
     return [
       {
         role: "system",
         content:
           "你是 ResearchFlow 的阅读助手。优先根据本次提交的完整网页正文和相关笔记回答。" +
-          "currentPage.text 是网页主要正文，分析时结合整篇内容，不要只解释开头或要求用户先选中文字。" +
-          "只有需要最新信息，或现有资料不足时，才调用 web_search。" +
+          "currentPage 非空时，text 是完整主要正文，结合整篇内容回答；为 null 时没有提供网页，不能声称读过当前网页。" +
+          "只能依据本次实际资料形成有来源支持的结论；资料不足时说明，不用常识冒充检索证据。" +
+          (options.allowWebSearch ? "用户允许联网。需要最新信息或资料不足时，可以调用 web_search。" : "用户未允许联网，不能调用联网工具，也不能声称已搜索或核对网络资料。") +
           "最多搜索一次。搜索失败时说明情况，不要编造资料和来源。" +
           "搜索摘要不等于读过网页原文；如果要用搜索结果支持结论，" +
           "优先调用 read_web_page 核对其中一篇。不得声称核对过未阅读的网页。" +
@@ -100,7 +118,8 @@ export class ResearchService {
         role: "user",
         content: JSON.stringify({
           question,
-          currentPage: { ...currentPage, sourceId: "S1" },
+          currentPage: currentPage ? { ...currentPage, sourceId: "S1" } : null,
+          options,
           retrievedNotes: knowledge.notes.map((note, index) => ({ ...note, sourceId: noteSourceId(index) })),
           knowledgeSearchFailed: knowledge.failed,
         }),

@@ -1,8 +1,9 @@
-import type { ResearchContext, ResearchResult } from "./researchApi";
+import type { ResearchContext, ResearchResult, ResearchOptions } from "./researchApi";
 
 export interface CompletedResearch {
   question: string;
-  context: ResearchContext;
+  context: ResearchContext | null;
+  options?: ResearchOptions;
   result: ResearchResult;
 }
 
@@ -16,8 +17,9 @@ export async function loadCompletedResearch(): Promise<CompletedResearch | null>
   const key = await sessionKey();
   const saved = (await chrome.storage.session.get(key))[key] as CompletedResearch | undefined;
   if (!saved || typeof saved.question !== "string" ||
-      typeof saved.context?.text !== "string" || typeof saved.context?.url !== "string" ||
-      saved.context.completeness !== "full" || typeof saved.context.capturedAt !== "string" ||
+      (saved.context !== null && (typeof saved.context?.text !== "string" || typeof saved.context?.url !== "string" ||
+      saved.context.completeness !== "full" || typeof saved.context.capturedAt !== "string")) ||
+      (saved.options !== undefined && (typeof saved.options?.searchKnowledgeBase !== "boolean" || typeof saved.options?.allowWebSearch !== "boolean")) ||
       typeof saved.result?.answer !== "string") return null;
   return saved;
 }

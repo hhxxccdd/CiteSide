@@ -60,10 +60,10 @@ onMounted(checkConnection);
     </nav>
 
     <div v-show="view === 'research'" class="workspace-body">
-      <ResearchRun :context="state === 'ready' ? snapshot : null" @saved="openKnowledge">
-        <template #page-context>
+      <ResearchRun :context="state === 'ready' ? snapshot : null" @saved="openKnowledge" @open-note="openKnowledge">
+        <template #page-context="{ included }">
           <CurrentPageCard
-            :page="page" :state="state" :notice="notice" :tabs-access="tabsAccess"
+            :page="page" :state="state" :notice="notice" :tabs-access="tabsAccess" :included="included"
             @read="read($event)" @refresh="refresh" @authorize="authorize" @authorize-tabs="authorizeTabs"
           />
         </template>

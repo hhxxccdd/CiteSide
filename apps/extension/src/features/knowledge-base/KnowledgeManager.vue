@@ -145,7 +145,7 @@ onMounted(async () => {
       <li v-for="entry in entries" :key="entry.id">
         <button type="button" class="knowledge-list-item" :class="{ selected: selected?.id === entry.id }" @click="openEntry(entry.id)">
           <span class="list-item-title">{{ entry.title }}</span>
-          <span class="list-item-meta">{{ entry.sourceTitle }}</span>
+          <span class="list-item-meta">{{ entry.sourceTitle || '个人笔记' }}</span>
           <span class="list-item-arrow" aria-hidden="true">↗</span>
         </button>
       </li>
@@ -157,7 +157,7 @@ onMounted(async () => {
       <AnswerContent v-if="!editing" class="knowledge-content" :content="selected.content" />
       <div class="context-box detail-meta">
         <p><strong>原问题</strong>{{ selected.originalQuestion }}</p>
-        <p><strong>来源</strong>{{ selected.sourceTitle }}</p>
+        <p><strong>来源</strong>{{ selected.sourceTitle || '未设置网页来源' }}</p>
         <a v-if="isWebUrl(selected.sourceUrl)" :href="selected.sourceUrl" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
         <p class="updated-at">更新于 {{ new Date(selected.updatedAt).toLocaleString() }}</p>
       </div>

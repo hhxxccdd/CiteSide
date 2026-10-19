@@ -58,8 +58,18 @@ export class KnowledgeService {
     const sourceTitle = input.sourceTitle.trim();
     const sourceUrl = input.sourceUrl.trim();
 
-    if (!title || !content || !originalQuestion || !sourceTitle || !sourceUrl) {
-      throw new BadRequestException("笔记内容和来源不能为空");
+    if (!title || !content || !originalQuestion) {
+      throw new BadRequestException("笔记标题、内容和原问题不能为空");
+    }
+    if (Boolean(sourceTitle) !== Boolean(sourceUrl)) {
+      throw new BadRequestException("来源标题和网址需要同时填写或同时留空");
+    }
+    if (sourceUrl) {
+      try {
+        if (!["http:", "https:"].includes(new URL(sourceUrl).protocol)) throw new Error();
+      } catch {
+        throw new BadRequestException("来源网址只支持 HTTP/HTTPS");
+      }
     }
 
     const { vectorText, model } = await this.vectorFor(title, content);

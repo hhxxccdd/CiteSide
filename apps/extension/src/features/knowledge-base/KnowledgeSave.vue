@@ -62,8 +62,8 @@ async function save(): Promise<void> {
       <textarea id="knowledge-content" v-model="content" :disabled="saving" rows="8" />
       <div class="context-box save-context">
         <p><strong>原问题</strong>{{ question }}</p>
-        <p><strong>来源网页</strong>{{ sourceTitle }}</p>
-        <p class="context-url">{{ sourceUrl }}</p>
+        <p><strong>主要网页来源</strong>{{ sourceTitle || '本次没有设置网页来源' }}</p>
+        <p v-if="sourceUrl" class="context-url">{{ sourceUrl }}</p>
       </div>
       <p v-if="error" class="error-message" role="alert">{{ error }}</p>
       <div class="button-row">
