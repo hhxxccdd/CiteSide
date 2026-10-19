@@ -128,10 +128,13 @@ onMounted(async () => {
       <input id="knowledge-filter" v-model="filter" type="search" placeholder="输入关键词" />
       <button type="submit" class="primary-button" :disabled="loading">{{ loading ? "查找中…" : "查找" }}</button>
     </form>
-    <p v-if="error" class="error-message" role="alert">{{ error }}</p>
+    <div v-if="error" class="error-message" role="alert">
+      {{ error }}
+      <button type="button" class="text-button" :disabled="loading || busy" @click="loadEntries">重试</button>
+    </div>
     <p v-if="notice" class="save-success" role="status">{{ notice }}</p>
     <p v-if="loading" class="description" role="status">正在读取笔记…</p>
-    <div v-if="!loading && !entries.length" class="knowledge-empty">
+    <div v-if="!loading && !error && !entries.length" class="knowledge-empty">
       <span aria-hidden="true">✦</span>
       <p>还没有找到笔记</p>
       <small>读到值得留下的内容，就从一次提问开始。</small>

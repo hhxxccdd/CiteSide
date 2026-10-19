@@ -128,14 +128,6 @@ async function submit(): Promise<void> {
       <span class="eyebrow">提出问题</span>
     </div>
     <form @submit.prevent="submit">
-      <fieldset class="scope-controls" :disabled="pending || restoring">
-        <legend>参考范围</legend>
-        <label><input v-model="useCurrentPage" type="checkbox" />使用当前网页</label>
-        <label><input v-model="searchKnowledgeBase" type="checkbox" />搜索个人知识库</label>
-        <label><input v-model="allowWebSearch" type="checkbox" />允许联网</label>
-      </fieldset>
-      <p v-if="useCurrentPage && !context" class="scope-hint">等待网页读取。也可以关闭“使用当前网页”，只查个人知识库或联网资料。</p>
-      <p v-else-if="!useCurrentPage && !searchKnowledgeBase && !allowWebSearch" class="scope-hint">请至少选择一种资料范围。</p>
       <label for="research-question">你想知道什么？</label>
       <textarea
         id="research-question"
@@ -145,6 +137,14 @@ async function submit(): Promise<void> {
         rows="4"
         maxlength="4000"
       />
+      <fieldset class="scope-controls" :disabled="pending || restoring">
+        <legend>参考范围</legend>
+        <label><input v-model="useCurrentPage" role="switch" type="checkbox" /><span class="switch-track" aria-hidden="true" />使用当前网页</label>
+        <label><input v-model="searchKnowledgeBase" role="switch" type="checkbox" /><span class="switch-track" aria-hidden="true" />搜索个人知识库</label>
+        <label><input v-model="allowWebSearch" role="switch" type="checkbox" /><span class="switch-track" aria-hidden="true" />允许联网</label>
+      </fieldset>
+      <p v-if="useCurrentPage && !context" class="scope-hint">等待网页读取。也可以关闭“使用当前网页”，只查个人知识库或联网资料。</p>
+      <p v-else-if="!useCurrentPage && !searchKnowledgeBase && !allowWebSearch" class="scope-hint">请至少选择一种资料范围。</p>
       <button type="submit" class="primary-button submit-button" :disabled="!canSubmit">
         {{ pending ? "正在研究，请稍候…" : "开始研究 →" }}
       </button>
@@ -204,10 +204,16 @@ async function submit(): Promise<void> {
 .research-card { margin-top: 12px; }
 .research-card > form { display: grid; gap: 9px; }
 .research-card .submit-button { margin-top: 4px; }
-.scope-controls { display: flex; flex-wrap: wrap; gap: 9px 15px; margin: 0 0 5px; padding: 0; border: 0; }
+.scope-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 3px 0 5px; padding: 0; border: 0; }
 .scope-controls legend { margin-bottom: 8px; color: var(--muted); font-size: 11px; }
-.scope-controls label { display: inline-flex; gap: 5px; align-items: center; font-size: 11px; font-weight: 500; }
-.scope-controls input { margin: 0; accent-color: var(--accent); }
+.scope-controls label { position: relative; display: inline-flex; gap: 6px; align-items: center; font-size: 11px; font-weight: 500; cursor: pointer; }
+.scope-controls input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.switch-track { width: 30px; height: 18px; flex: 0 0 30px; border-radius: 12px; background: #c8d2cc; transition: background .15s; }
+.switch-track::after { content: ''; display: block; width: 14px; height: 14px; margin: 2px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #173b2b26; transition: transform .15s; }
+.scope-controls input:checked + .switch-track { background: var(--accent); }
+.scope-controls input:checked + .switch-track::after { transform: translateX(12px); }
+.scope-controls input:focus-visible + .switch-track { outline: 2px solid #30a17a; outline-offset: 3px; }
+.scope-controls:disabled label { opacity: .55; cursor: not-allowed; }
 .scope-hint { margin: 0 0 5px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .working-state { display: flex; gap: 9px; align-items: flex-start; margin-top: 13px; padding: 11px; border-radius: 9px; background: #edf6f0; color: #3e6a55; font-size: 11px; line-height: 1.5; }
 .working-indicator { width: 9px; height: 9px; flex: 0 0 9px; margin-top: 3px; border: 2px solid #85b9a0; border-top-color: #207a5c; border-radius: 50%; animation: spin .8s linear infinite; }

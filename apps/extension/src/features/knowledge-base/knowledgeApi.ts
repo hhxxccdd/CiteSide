@@ -21,18 +21,27 @@ async function readResponse<T>(response: Response, action: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function fetchKnowledge(url: string, options?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...options, signal: options?.signal ?? AbortSignal.timeout(90_000) });
+  } catch (cause) {
+    if (options?.signal?.aborted) throw cause;
+    throw new Error("无法连接本地知识库服务，请确认后端已启动，再点击重试。");
+  }
+}
+
 export async function listKnowledgeEntries(filter = ""): Promise<KnowledgeEntry[]> {
   const params = new URLSearchParams();
   if (filter.trim()) params.set("q", filter.trim());
   const query = params.toString();
-  const response = await fetch(
+  const response = await fetchKnowledge(
     `http://127.0.0.1:3000/api/knowledge${query ? `?${query}` : ""}`,
   );
   return readResponse<KnowledgeEntry[]>(response, "读取笔记");
 }
 
 export async function getKnowledgeEntry(id: string): Promise<KnowledgeEntry> {
-  const response = await fetch(`http://127.0.0.1:3000/api/knowledge/${encodeURIComponent(id)}`);
+  const response = await fetchKnowledge(`http://127.0.0.1:3000/api/knowledge/${encodeURIComponent(id)}`);
   return readResponse<KnowledgeEntry>(response, "读取笔记");
 }
 
@@ -40,7 +49,7 @@ export async function updateKnowledgeEntry(
   id: string,
   input: { title: string; content: string },
 ): Promise<KnowledgeEntry> {
-  const response = await fetch(`http://127.0.0.1:3000/api/knowledge/${encodeURIComponent(id)}`, {
+  const response = await fetchKnowledge(`http://127.0.0.1:3000/api/knowledge/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -49,7 +58,7 @@ export async function updateKnowledgeEntry(
 }
 
 export async function deleteKnowledgeEntry(id: string): Promise<void> {
-  const response = await fetch(`http://127.0.0.1:3000/api/knowledge/${encodeURIComponent(id)}`, {
+  const response = await fetchKnowledge(`http://127.0.0.1:3000/api/knowledge/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   await readResponse<{ deleted: true }>(response, "删除笔记");
@@ -58,7 +67,7 @@ export async function deleteKnowledgeEntry(id: string): Promise<void> {
 export async function createKnowledgeEntry(
   input: CreateKnowledgeInput,
 ): Promise<string> {
-  const response = await fetch("http://127.0.0.1:3000/api/knowledge", {
+  const response = await fetchKnowledge("http://127.0.0.1:3000/api/knowledge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
