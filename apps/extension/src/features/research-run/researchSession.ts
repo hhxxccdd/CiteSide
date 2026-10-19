@@ -18,11 +18,21 @@ export interface ResearchDraft {
   materials: ResearchMaterial[];
 }
 
+export interface ResearchAttempt {
+  question: string;
+  pages: PageSnapshot[];
+  noteIds: string[];
+  usedCurrentPage: boolean;
+  options: ResearchOptions;
+}
+
 export interface ResearchWorkspace {
   draft: ResearchDraft | null;
   completed: CompletedResearch | null;
   noteDraft: { runId: string; value: KnowledgeDraft } | null;
   unfinishedRun: boolean;
+  attempt?: ResearchAttempt | null;
+  attemptStatus?: "stopped" | "failed" | null;
 }
 
 type StoredMaterial = Exclude<ResearchMaterial, { kind: "page" }> |
@@ -34,6 +44,8 @@ interface StoredWorkspace {
   completed: (Omit<CompletedResearch, "pages"> & { pages: number[] }) | null;
   noteDraft: ResearchWorkspace["noteDraft"];
   unfinishedRun: boolean;
+  attempt?: (Omit<ResearchAttempt, "pages"> & { pages: number[] }) | null;
+  attemptStatus?: "stopped" | "failed" | null;
 }
 
 async function keys() {
@@ -79,9 +91,16 @@ function decode(value: StoredWorkspace): ResearchWorkspace {
   const note = value.noteDraft;
   if (note && (typeof note.runId !== "string" || !note.value || typeof note.value.editing !== "boolean" ||
     typeof note.value.title !== "string" || typeof note.value.content !== "string" || typeof note.value.savedId !== "string")) throw new Error("笔记草稿格式不正确");
+  const attempt = value.attempt;
+  if (value.attemptStatus != null && !["stopped", "failed"].includes(value.attemptStatus)) throw new Error("任务状态不正确");
+  if (attempt && (typeof attempt.question !== "string" || !Array.isArray(attempt.pages) ||
+    !Array.isArray(attempt.noteIds) || !attempt.noteIds.every((id) => typeof id === "string" && /^[1-9]\d{0,18}$/.test(id)) ||
+    typeof attempt.usedCurrentPage !== "boolean" || !validOptions(attempt.options))) throw new Error("重试资料格式不正确");
   return { draft: draft ? { ...draft, materials } : null,
     completed: completed ? { ...completed, pages: completed.pages.map(pageAt) } : null,
-    noteDraft: note ?? null, unfinishedRun: value.unfinishedRun === true };
+    noteDraft: note ?? null, unfinishedRun: value.unfinishedRun === true,
+    attempt: attempt ? { ...attempt, pages: attempt.pages.map(pageAt) } : null,
+    attemptStatus: value.attemptStatus ?? null };
 }
 
 // 同一份正文在草稿与完成结果中只保存一次，避免重复占用会话存储容量。
@@ -96,8 +115,10 @@ function encode(value: ResearchWorkspace): StoredWorkspace {
   const completed = value.completed ? { ...value.completed, pages: value.completed.pages.map(include) } : null;
   const draft = value.draft ? { ...value.draft, materials: value.draft.materials.map((item): StoredMaterial =>
     item.kind === "note" ? item : { ...item, snapshot: item.snapshot ? include(item.snapshot) : null }) } : null;
+  const attempt = value.attempt ? { ...value.attempt, pages: value.attempt.pages.map(include) } : null;
   // 去除 Vue 的响应式代理，并固定本次写入的数据，后续修改不能改变排队中的旧写入。
-  return JSON.parse(JSON.stringify({ version: 1, snapshots, completed, draft, noteDraft: value.noteDraft, unfinishedRun: value.unfinishedRun }));
+  return JSON.parse(JSON.stringify({ version: 1, snapshots, completed, draft, attempt, attemptStatus: value.attemptStatus,
+    noteDraft: value.noteDraft, unfinishedRun: value.unfinishedRun }));
 }
 
 export async function loadResearchWorkspace(): Promise<ResearchWorkspace | null> {

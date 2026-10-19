@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, shallowRef } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import type { PageSnapshot } from "../page-context/pageContext.types";
-import { runResearch, type ResearchContext, type ResearchResult, type ResearchOptions } from "./researchApi";
+import { type ResearchContext, type ResearchResult } from "./researchApi";
+import { useResearchRun } from "./useResearchRun";
+import ResearchProgress from "./ResearchProgress.vue";
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
 import AnswerContent from "./AnswerContent.vue";
 import SourceExcerpt from "./SourceExcerpt.vue";
@@ -13,6 +15,7 @@ import type { MaterialChoice } from "../research-materials/material.types";
 import type { CompletedResearch, ResearchWorkspace } from "./researchSession";
 import { useResearchWorkspace } from "./useResearchWorkspace";
 import type { KnowledgeDraft } from "../knowledge-base/knowledgeDraft.types";
+import type { ResearchOptions } from "./researchApi";
 
 const props = defineProps<{ context: PageSnapshot | null }>();
 const emit = defineEmits<{ saved: [id: string]; openNote: [id: string] }>();
@@ -30,13 +33,24 @@ const { items, noteIds, hasUnready, selectedUrls } = materials;
 const requestPages = computed(() => materials.pages());
 const transferTooLarge = computed(() => requestPages.value.reduce((size, page) => size + new TextEncoder().encode(page.text).byteLength, 0) > 8 * 1024 * 1024);
 const completedRun = ref(0);
-const pending = ref(false);
-// 请求失败或页面卸载前，保留“未完成”标记；不能用 loading 状态代表任务已完成。
-const unfinishedRun = ref(false);
-const error = ref("");
 const completed = shallowRef<CompletedResearch | null>(null);
 const noteDraft = ref<KnowledgeDraft | null>(null);
 const citedSourceIds = ref<string[]>([]);
+const run = useResearchRun({
+  beforeStart: () => flushWorkspace(),
+  completed: async (answer, attempt) => {
+    result.value = answer;
+    submittedPages.value = attempt.pages.map((page) => ({ ...page, completeness: "full" }));
+    submittedQuestion.value = attempt.question;
+    submittedOptions.value = attempt.options;
+    noteDraft.value = null;
+    completed.value = { question: attempt.question, pages: attempt.pages,
+      usedCurrentPage: attempt.usedCurrentPage, options: attempt.options, result: answer };
+    completedRun.value += 1;
+    await flushWorkspace();
+  },
+});
+const { pending, unfinishedRun, error, phase, steps, liveAnswer, lastAttempt } = run;
 const sources = computed(() => result.value?.sources ?? []);
 const noteContent = computed(() => editableMarkdown(result.value?.answer ?? "", sources.value));
 const canSubmit = computed(() => Boolean(question.value.trim()) && !pending.value && !restoring.value &&
@@ -50,8 +64,6 @@ const answerScope = computed(() => [
 ].filter(Boolean).join(" · "));
 const primarySource = computed(() => submittedPages.value[0] ?? sources.value.find((source) =>
   source.kind === "web" && source.evidence === "page-text") ?? null);
-let controller: AbortController | null = null;
-let requestNumber = 0;
 
 const { restoring, notice: sessionNotice, flush: flushWorkspace } = useResearchWorkspace({
   capture: () => ({
@@ -60,6 +72,8 @@ const { restoring, notice: sessionNotice, flush: flushWorkspace } = useResearchW
     completed: completed.value,
     noteDraft: result.value && noteDraft.value ? { runId: result.value.runId, value: noteDraft.value } : null,
     unfinishedRun: unfinishedRun.value,
+    attempt: lastAttempt.value,
+    attemptStatus: phase.value === "stopped" || phase.value === "failed" ? phase.value : null,
   }),
   restore: restoreWorkspace,
 });
@@ -89,11 +103,8 @@ function restoreWorkspace(workspace: ResearchWorkspace): void {
     items.value = workspace.draft.materials;
   }
   if (workspace.noteDraft?.runId === saved?.result.runId) noteDraft.value = workspace.noteDraft?.value ?? null;
-  if (workspace.unfinishedRun) error.value = "上次研究未完成，未自动重发。问题和资料已保留，可点击开始研究重试。";
+  run.restore(workspace.attempt ?? null, workspace.unfinishedRun, workspace.attemptStatus);
 }
-
-// 切页不会卸载本组件，也不会修改已提交的正文快照。
-onUnmounted(() => { requestNumber += 1; controller?.abort(); });
 
 function isWebUrl(url: string): boolean {
   try { return ["http:", "https:"].includes(new URL(url).protocol); }
@@ -106,51 +117,20 @@ async function submit(): Promise<void> {
   if (!canSubmit.value || page && page.completeness !== "full") return;
 
   const snapshots = requestPages.value.map((item) => ({ ...item }));
-  const pages: ResearchContext[] = snapshots.map((item) => ({
-    title: item.title, url: item.url, text: item.text, capturedAt: item.capturedAt, completeness: "full",
-  }));
   const usedCurrentPage = useCurrentPage.value;
   const selectedNoteIds = [...noteIds.value];
   const options: ResearchOptions = {
     searchKnowledgeBase: searchKnowledgeBase.value, allowWebSearch: allowWebSearch.value,
   };
-  controller?.abort();
-  const requestController = new AbortController();
-  controller = requestController;
-  const currentRequest = ++requestNumber;
-  pending.value = true;
-  unfinishedRun.value = true;
-  error.value = "";
-  try {
-    await flushWorkspace();
-    if (currentRequest !== requestNumber) return;
+  await run.start({ question: text, pages: snapshots, noteIds: selectedNoteIds, usedCurrentPage, options }, async () => {
     if (page) {
       const currentWindow = await chrome.windows.getCurrent();
       const [tab] = await chrome.tabs.query({ active: true, windowId: currentWindow.id });
-      if (currentRequest !== requestNumber) return;
       if (tab?.id !== page.tabId || tab.url !== page.url || tab.status === "loading" || props.context?.id !== page.id) {
         throw new Error("网页已变化，请等待当前网页正文读取完成后再提问。");
       }
     }
-    const answer = await runResearch(text, { pages, noteIds: selectedNoteIds }, options, requestController.signal);
-    if (currentRequest !== requestNumber) return;
-    result.value = answer;
-    submittedPages.value = pages;
-    submittedQuestion.value = text;
-    submittedOptions.value = options;
-    noteDraft.value = null;
-    completed.value = { question: text, pages: snapshots, usedCurrentPage, options, result: answer };
-    completedRun.value += 1;
-    pending.value = false;
-    unfinishedRun.value = false;
-    await flushWorkspace();
-  } catch (cause) {
-    if (currentRequest === requestNumber) {
-      error.value = cause instanceof Error && cause.name !== "AbortError" ? cause.message : "提问已中断，请重试。";
-    }
-  } finally {
-    if (currentRequest === requestNumber) { pending.value = false; controller = null; }
-  }
+  });
 }
 function onQuestionInput(event: Event): void {
   if (event instanceof InputEvent && event.isComposing) return;
@@ -200,11 +180,9 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
         {{ pending ? "正在研究，请稍候…" : "开始研究 →" }}
       </button>
     </form>
-    <div v-if="pending" class="working-state" role="status">
-      <span class="working-indicator" aria-hidden="true" />
-      <span>正在查找资料并生成回答，完成后会显示在这里。</span>
-    </div>
-    <p v-if="error" class="error-message" role="alert">{{ error }}</p>
+    <ResearchProgress :phase="phase" :steps="steps" :answer="liveAnswer" :question="lastAttempt?.question ?? ''"
+      :can-retry="Boolean(lastAttempt) && !pending && !restoring" @stop="run.stop" @retry="run.retry" />
+    <p v-if="error" :class="phase === 'stopped' ? 'source-note' : 'error-message'" :role="phase === 'stopped' ? 'status' : 'alert'">{{ error }}</p>
     <p v-if="sessionNotice" class="source-note" role="status">{{ sessionNotice }} <button type="button" class="text-button" @click="flushWorkspace">重试暂存</button></p>
 
     <MaterialPicker :open="pickerOpen" :selected-urls="selectedUrls" :selected-note-ids="noteIds" @close="pickerOpen = false" @select="selectMaterial" />
@@ -274,9 +252,6 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
 .scope-controls input:focus-visible + .switch-track { outline: 2px solid #30a17a; outline-offset: 3px; }
 .scope-controls:disabled label { opacity: .55; cursor: not-allowed; }
 .scope-hint { margin: 0 0 5px; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.working-state { display: flex; gap: 9px; align-items: flex-start; margin-top: 13px; padding: 11px; border-radius: 9px; background: #edf6f0; color: #3e6a55; font-size: 11px; line-height: 1.5; }
-.working-indicator { width: 9px; height: 9px; flex: 0 0 9px; margin-top: 3px; border: 2px solid #85b9a0; border-top-color: #207a5c; border-radius: 50%; animation: spin .8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 .research-result { margin-top: 20px; padding-top: 18px; border-top: 1px solid #e7eee8; }
 .result-heading { display: flex; align-items: center; gap: 10px; }
 .result-heading h2 { margin: 3px 0 0; }
@@ -296,5 +271,4 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
 .source-item a { font-size: 11px; text-decoration: none; }
 .source-item a:hover { text-decoration: underline; }
 .cited-tag { display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 4px; background: #e7f2e9; color: #277766; font-size: 10px; }
-@media (prefers-reduced-motion: reduce) { .working-indicator { animation: none; } }
 </style>

@@ -45,6 +45,12 @@ export interface ResearchOptions {
 
 export interface ResearchMaterials { pages: ResearchContext[]; noteIds: string[] }
 
+export interface ResearchRequest {
+  question: string;
+  materials: ResearchMaterials;
+  options: ResearchOptions;
+}
+
 export async function runResearch(
   question: string,
   materials: ResearchMaterials,
