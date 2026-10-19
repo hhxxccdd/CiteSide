@@ -75,3 +75,7 @@ API 健康检查：`http://127.0.0.1:3000/api/health`。该接口同时检查 Po
 当前完整正文上限 30,000 字符，超出时明确提示并阻止提问，不截取开头假称全文。切换网页更新当前页信息，但已提交的任务继续使用原正文，保留回答与保存编辑内容。正文和回答不会自动存入知识库。
 
 后端运行 npm run dev:api 时源文件修改会自动重启；若运行的是生产命令，需要重新构建并重启。当前 POST /api/research/run 接收 question 和 context，context 包含 title、url、text、capturedAt、completeness（必须是 full）。旧选区 truncated 字段已移除。
+
+### 长文章处理设计（尚未实现）
+
+设计见 [SDD-006](docs/SDD-006-long-document-processing.md)。计划以模型 Token 预算替代三万字符拦截：普通文章直接使用全文，超长文章具体问答采用全文范围内的段落检索，整体总结逐段处理再汇总。文档包含临时索引、引用、任务进度、取消、文件结构、实现步骤及面试说明。当前运行代码的限制尚未变更。
