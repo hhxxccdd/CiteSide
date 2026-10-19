@@ -22,8 +22,11 @@ export function parseResearchInput(value: unknown): ResearchInput {
       typeof page.text !== "string" || !page.text.trim()) {
     throw new BadRequestException("网页标题、网址或正文不正确，请重新读取");
   }
-  if (page.completeness !== "full" || page.text.length > 30_000) {
-    throw new BadRequestException("需要完整网页正文；当前仅支持不超过 30,000 字符的文章");
+  if (page.completeness !== "full") {
+    throw new BadRequestException("网页正文尚未完整读取，请重新读取");
+  }
+  if (Buffer.byteLength(page.text, "utf8") > 8 * 1024 * 1024) {
+    throw new BadRequestException("网页正文超过单次 8 MiB 的传输容量，暂时无法提交；这与模型上下文容量是不同的限制");
   }
   try {
     if (!["http:", "https:"].includes(new URL(page.url).protocol)) throw new Error();

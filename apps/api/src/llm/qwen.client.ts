@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 export interface QwenToolCall {
@@ -29,9 +29,11 @@ export interface QwenToolDefinition {
 export interface QwenAssistantMessage {
   content?: string | null;
   tool_calls?: QwenToolCall[];
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
 type QwenResponse = {
+  usage?: QwenAssistantMessage['usage'];
   choices?: Array<{
     message?: {
       content?: string | null;
@@ -43,6 +45,8 @@ type QwenResponse = {
 
 @Injectable()
 export class QwenClient {
+  private readonly logger = new Logger(QwenClient.name);
+
   constructor(private readonly config: ConfigService) {}
 
   async chat(messages: QwenMessage[]): Promise<string> {
@@ -64,6 +68,10 @@ export class QwenClient {
     messages: QwenMessage[],
     tools?: readonly QwenToolDefinition[],
   ): Promise<QwenAssistantMessage> {
+    const maxOutputTokens = Number(this.config.get('QWEN_MAX_OUTPUT_TOKENS') ?? 8192);
+    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1) {
+      throw new Error('QWEN_MAX_OUTPUT_TOKENS 必须是正整数');
+    }
     const apiKey = this.config.getOrThrow<string>('DASHSCOPE_API_KEY');
     const baseUrl = this.config
       .getOrThrow<string>('DASHSCOPE_BASE_URL')
@@ -80,12 +88,18 @@ export class QwenClient {
         model,
         messages,
         stream: false,
+        max_tokens: maxOutputTokens,
         ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
       }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!response.ok) {
+      const detail = await response.json().catch(() => null) as { error?: { code?: string; message?: string } } | null;
+      if (response.status === 400 && (detail?.error?.code === 'context_length_exceeded' ||
+          /maximum context|context length|input length/i.test(detail?.error?.message ?? ''))) {
+        throw new BadRequestException('完整资料超过当前模型的上下文容量，本次没有截取正文。');
+      }
       throw new Error(`Qwen 请求失败：HTTP ${response.status}`);
     }
 
@@ -94,6 +108,9 @@ export class QwenClient {
     if (!message) {
       throw new Error('Qwen 没有返回消息');
     }
-    return message;
+    if (data.usage) {
+      this.logger.debug(`Token usage: input=${data.usage.prompt_tokens}, output=${data.usage.completion_tokens}`);
+    }
+    return { ...message, usage: data.usage };
   }
 }

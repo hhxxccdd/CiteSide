@@ -1,35 +1,12 @@
 import { Readability } from "@mozilla/readability";
+import TurndownService from "turndown";
+import { tables } from "turndown-plugin-gfm";
 import type { ExtractedPage } from "./pageContext.types";
 
-const PAGE_TEXT_LIMIT = 30_000;
+const PAGE_TRANSFER_BYTES = 8 * 1024 * 1024;
 
-// 保留结构，避免 textContent 把段落和代码连成一行。
-function readableText(root: Node): string {
-  const parts: string[] = [];
-  function visit(node: Node): void {
-    if (node.nodeType === Node.TEXT_NODE) {
-      parts.push((node.textContent ?? "").replace(/\s+/g, " "));
-      return;
-    }
-    if (!(node instanceof Element)) return;
-    const tag = node.tagName;
-    if (tag === "PRE") {
-      parts.push("\n\n" + (node.textContent ?? "").trim() + "\n\n");
-      return;
-    }
-    if (tag === "BR") { parts.push("\n"); return; }
-    const block = /^(H[1-6]|P|DIV|SECTION|ARTICLE|BLOCKQUOTE|UL|OL|LI|TABLE|TR)$/.test(tag);
-    if (block) parts.push("\n");
-    if (/^H[1-6]$/.test(tag)) parts.push("#".repeat(Number(tag[1])) + " ");
-    if (tag === "LI") parts.push("- ");
-    for (const child of node.childNodes) visit(child);
-    if (tag === "TD" || tag === "TH") parts.push(" | ");
-    if (block) parts.push("\n");
-  }
-  visit(root);
-  // 不统一压缩换行，以免破坏代码块中的空行。
-  return parts.join("").trim();
-}
+const markdown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced", bulletListMarker: "-" });
+markdown.use(tables);
 
 export function extractPageContent(
   source: Document,
@@ -48,11 +25,11 @@ export function extractPageContent(
     }
   });
   copy.querySelectorAll(
-    "script,style,noscript,nav,footer,aside,iframe,form,input,textarea,select,button,[role=navigation],[role=banner],[role=dialog]",
+    "script,style,noscript,nav,footer,aside,iframe,form,input,textarea,select,button,img,svg,video,audio,[role=navigation],[role=banner],[role=dialog]",
   ).forEach((element) => element.remove());
 
   let title = source.title || source.location.href;
-  let root: Element | null;
+  let root: HTMLElement | null;
   if (fallback) {
     root = copy.body;
   } else {
@@ -62,15 +39,16 @@ export function extractPageContent(
     // 在脱离页面的文档中解析，不把网页 HTML 插入侧栏。
     root = new DOMParser().parseFromString(article.content, "text/html").body;
   }
-  const text = root ? readableText(root) : "";
+  const text = root ? markdown.turndown(root) : "";
   if (!text.trim()) return null;
+  const exceedsTransferLimit = new TextEncoder().encode(text).byteLength > PAGE_TRANSFER_BYTES;
   return {
     title,
     url: source.location.href,
-    text: text.slice(0, PAGE_TEXT_LIMIT),
+    text: exceedsTransferLimit ? "" : text,
     totalCharacters: text.length,
     capturedAt: new Date().toISOString(),
-    completeness: text.length > PAGE_TEXT_LIMIT ? "partial" : "full",
+    completeness: exceedsTransferLimit ? "partial" : "full",
     extraction: fallback ? "visible-text" : "article",
   };
 }

@@ -98,6 +98,7 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="panel research-card">
+    <slot name="page-context" />
     <div class="panel-heading">
       <span class="eyebrow">提出问题</span>
     </div>
