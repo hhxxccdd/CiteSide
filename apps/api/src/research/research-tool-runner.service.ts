@@ -114,7 +114,7 @@ export class ResearchToolRunner {
           const result = await this.performWebSearch(call);
           sources = result.sources;
           toolResult = {
-            notice: "这里只提供搜索候选的标题和网址，尚未读取网页正文。标题和网址不能支持具体事实或统计；需要原文时调用 read_web_page。",
+            ...result,
             sources: result.sources.map((source, index) => ({ ...source, sourceId: webSourceId(index) })),
           };
         } catch {
@@ -202,7 +202,7 @@ export class ResearchToolRunner {
           toolResult = {
             ...webPageReadError,
             error:
-              "网页阅读失败。搜索候选的标题和网址不等于正文证据，不要据此断言事实；" +
+              "网页阅读失败。搜索摘要未经核实，不要据此断言事实；" +
               "仅根据网页正文和个人笔记回答，不足时说明无法确认。",
           };
         }
