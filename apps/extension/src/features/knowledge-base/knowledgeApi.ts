@@ -30,12 +30,13 @@ async function fetchKnowledge(url: string, options?: RequestInit): Promise<Respo
   }
 }
 
-export async function listKnowledgeEntries(filter = ""): Promise<KnowledgeEntry[]> {
+export async function listKnowledgeEntries(filter = "", signal?: AbortSignal): Promise<KnowledgeEntry[]> {
   const params = new URLSearchParams();
   if (filter.trim()) params.set("q", filter.trim());
   const query = params.toString();
   const response = await fetchKnowledge(
     `http://127.0.0.1:3000/api/knowledge${query ? `?${query}` : ""}`,
+    { signal },
   );
   return readResponse<KnowledgeEntry[]>(response, "读取笔记");
 }

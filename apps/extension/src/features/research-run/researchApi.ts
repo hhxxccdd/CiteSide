@@ -9,6 +9,7 @@ export interface ResearchContext {
 export interface ResearchResult {
   runId: string;
   options: ResearchOptions;
+  specifiedNotes?: Array<{ id: string; title: string; content: string; sourceTitle: string; sourceUrl: string }>;
   answer: string;
   sources: ResearchSource[];
   retrievedNotes: Array<{
@@ -41,16 +42,18 @@ export interface ResearchOptions {
   allowWebSearch: boolean;
 }
 
+export interface ResearchMaterials { pages: ResearchContext[]; noteIds: string[] }
+
 export async function runResearch(
   question: string,
-  context: ResearchContext | null,
+  materials: ResearchMaterials,
   options: ResearchOptions,
   signal: AbortSignal,
 ): Promise<ResearchResult> {
   const response = await fetch("http://127.0.0.1:3000/api/research/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, context, options }),
+    body: JSON.stringify({ question, materials, options }),
     signal,
   });
 

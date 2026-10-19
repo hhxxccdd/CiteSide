@@ -1,4 +1,4 @@
-import type { KnowledgeSearchResult } from "../knowledge/Knowledge.service";
+import type { ResearchNote } from "./research-context.service";
 import type { CurrentPageContext } from "./tools/read-current-context.tool";
 import type { ReadWebPageResult } from "./tools/read-web-page.tool";
 import type { WebSearchSource } from "./tools/web-search.tool";
@@ -17,6 +17,8 @@ export function noteSourceId(index: number): string {
   return `N${index + 1}`;
 }
 
+export function pageSourceId(index: number): string { return `S${index + 1}`; }
+
 export function webSourceId(index: number): string {
   return `W${index + 1}`;
 }
@@ -30,14 +32,14 @@ function sameUrl(left: string, right: string): boolean {
 }
 
 export function createResearchSources(
-  page: CurrentPageContext | null,
-  notes: KnowledgeSearchResult[],
+  pages: CurrentPageContext[],
+  notes: ResearchNote[],
   webSources: WebSearchSource[],
   readPage: ReadWebPageResult | null,
 ): ResearchSource[] {
   return [
-    ...(page ? [{ id: "S1", kind: "page" as const, title: page.title, url: page.url,
-      excerpt: page.text.slice(0, 1200), evidence: "page-text" as const }] : []),
+    ...pages.map((page, index): ResearchSource => ({ id: pageSourceId(index), kind: "page", title: page.title, url: page.url,
+      excerpt: page.text.slice(0, 1200), evidence: "page-text" })),
     ...notes.map((note, index): ResearchSource => ({
       id: noteSourceId(index), kind: "note", title: note.title,
       url: note.sourceUrl, excerpt: note.content.slice(0, 1200), evidence: "note", noteId: note.id,

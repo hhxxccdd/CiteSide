@@ -5,18 +5,27 @@ import { runResearch, type ResearchContext, type ResearchResult, type ResearchOp
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
 import AnswerContent from "./AnswerContent.vue";
 import { editableMarkdown } from "./answerMarkdown";
+import MaterialPicker from "../research-materials/MaterialPicker.vue";
+import MaterialList from "../research-materials/MaterialList.vue";
+import { useResearchMaterials } from "../research-materials/useResearchMaterials";
+import type { MaterialChoice } from "../research-materials/material.types";
 import { loadCompletedResearch, saveCompletedResearch } from "./researchSession";
 
 const props = defineProps<{ context: PageSnapshot | null }>();
 const emit = defineEmits<{ saved: [id: string]; openNote: [id: string] }>();
 const question = ref("");
 const result = ref<ResearchResult | null>(null);
-const submittedContext = ref<ResearchContext | null>(null);
+const submittedPages = ref<ResearchContext[]>([]);
 const submittedQuestion = ref("");
 const useCurrentPage = ref(true);
 const searchKnowledgeBase = ref(true);
 const allowWebSearch = ref(false);
 const submittedOptions = ref<ResearchOptions | null>(null);
+const pickerOpen = ref(false);
+const materials = useResearchMaterials(() => useCurrentPage.value ? props.context : null);
+const { items, noteIds, hasUnready, selectedUrls } = materials;
+const requestPages = computed(() => materials.pages());
+const transferTooLarge = computed(() => requestPages.value.reduce((size, page) => size + new TextEncoder().encode(page.text).byteLength, 0) > 8 * 1024 * 1024);
 const completedRun = ref(0);
 const pending = ref(false);
 const error = ref("");
@@ -26,13 +35,15 @@ const citedSourceIds = ref<string[]>([]);
 const sources = computed(() => result.value?.sources ?? []);
 const noteContent = computed(() => editableMarkdown(result.value?.answer ?? "", sources.value));
 const canSubmit = computed(() => Boolean(question.value.trim()) && !pending.value && !restoring.value &&
-  (useCurrentPage.value ? props.context !== null : searchKnowledgeBase.value || allowWebSearch.value));
+  (!useCurrentPage.value || props.context !== null) && !hasUnready.value && selectedUrls.value.length <= 3 && !transferTooLarge.value &&
+  (requestPages.value.length > 0 || noteIds.value.length > 0 || searchKnowledgeBase.value || allowWebSearch.value));
 const answerScope = computed(() => [
-  submittedContext.value ? "网页正文" : "",
-  submittedOptions.value?.searchKnowledgeBase ? "个人知识库" : "",
+  submittedPages.value.length ? `${submittedPages.value.length} 篇网页` : "",
+  result.value?.specifiedNotes?.length ? `${result.value.specifiedNotes.length} 条指定笔记` : "",
+  submittedOptions.value?.searchKnowledgeBase ? "搜索个人知识库" : "",
   submittedOptions.value?.allowWebSearch ? "允许联网" : "",
 ].filter(Boolean).join(" · "));
-const primarySource = computed(() => submittedContext.value ?? sources.value.find((source) =>
+const primarySource = computed(() => submittedPages.value[0] ?? sources.value.find((source) =>
   source.kind === "web" && source.evidence === "page-text") ?? null);
 let controller: AbortController | null = null;
 let requestNumber = 0;
@@ -44,15 +55,16 @@ onMounted(async () => {
     if (disposed) return;
     if (saved) {
       result.value = saved.result;
-      submittedContext.value = saved.context;
+      submittedPages.value = saved.pages.map((page) => ({ ...page, completeness: "full" as const }));
       submittedQuestion.value = saved.question;
       question.value = saved.question;
       submittedOptions.value = saved.options ?? null;
       if (saved.options) {
-        useCurrentPage.value = saved.context !== null;
+        useCurrentPage.value = saved.usedCurrentPage;
         searchKnowledgeBase.value = saved.options.searchKnowledgeBase;
         allowWebSearch.value = saved.options.allowWebSearch;
       }
+      materials.restore(saved.usedCurrentPage ? saved.pages.slice(1) : saved.pages, saved.result.specifiedNotes ?? []);
       completedRun.value += 1;
     }
   } catch {
@@ -75,10 +87,12 @@ async function submit(): Promise<void> {
   const text = question.value.trim();
   if (!canSubmit.value || page && page.completeness !== "full") return;
 
-  const context: ResearchContext | null = page ? {
-    title: page.title, url: page.url, text: page.text,
-    capturedAt: page.capturedAt, completeness: "full",
-  } : null;
+  const snapshots = requestPages.value.map((item) => ({ ...item }));
+  const pages: ResearchContext[] = snapshots.map((item) => ({
+    title: item.title, url: item.url, text: item.text, capturedAt: item.capturedAt, completeness: "full",
+  }));
+  const usedCurrentPage = useCurrentPage.value;
+  const selectedNoteIds = [...noteIds.value];
   const options: ResearchOptions = {
     searchKnowledgeBase: searchKnowledgeBase.value, allowWebSearch: allowWebSearch.value,
   };
@@ -97,17 +111,17 @@ async function submit(): Promise<void> {
         throw new Error("网页已变化，请等待当前网页正文读取完成后再提问。");
       }
     }
-    const answer = await runResearch(text, context, options, requestController.signal);
+    const answer = await runResearch(text, { pages, noteIds: selectedNoteIds }, options, requestController.signal);
     if (currentRequest !== requestNumber) return;
     result.value = answer;
-    submittedContext.value = context;
+    submittedPages.value = pages;
     submittedQuestion.value = text;
     submittedOptions.value = options;
     completedRun.value += 1;
     pending.value = false;
     sessionNotice.value = "";
     try {
-      await saveCompletedResearch({ question: text, context, options, result: answer });
+      await saveCompletedResearch({ question: text, pages: snapshots, usedCurrentPage, options, result: answer });
     } catch {
       if (currentRequest === requestNumber) sessionNotice.value = "回答已显示，但暂存失败。关闭侧栏后可能无法恢复。";
     }
@@ -119,6 +133,17 @@ async function submit(): Promise<void> {
     if (currentRequest === requestNumber) { pending.value = false; controller = null; }
   }
 }
+function onQuestionInput(event: Event): void {
+  if (event instanceof InputEvent && event.isComposing) return;
+  const input = event.target as HTMLTextAreaElement;
+  const cursor = input.selectionStart;
+  if (input.value[cursor - 1] === "@" && (cursor === 1 || /\s/.test(input.value[cursor - 2]))) {
+    question.value = input.value.slice(0, cursor - 1) + input.value.slice(cursor);
+    pickerOpen.value = true;
+  }
+}
+
+function selectMaterial(choice: MaterialChoice): void { void materials.add(choice); }
 </script>
 
 <template>
@@ -127,6 +152,8 @@ async function submit(): Promise<void> {
     <div class="panel-heading">
       <span class="eyebrow">提出问题</span>
     </div>
+    <MaterialList :items="items" :disabled="pending || restoring" @remove="materials.remove" @retry="materials.read" />
+    <p v-if="materials.notice.value" class="source-warning">{{ materials.notice.value }}</p>
     <form @submit.prevent="submit">
       <label for="research-question">你想知道什么？</label>
       <textarea
@@ -136,7 +163,9 @@ async function submit(): Promise<void> {
         :placeholder="useCurrentPage ? '例如：总结这篇文章，并解释它的核心观点' : '例如：我之前保存过哪些关于泛型的笔记？'"
         rows="4"
         maxlength="4000"
+        @input="onQuestionInput"
       />
+      <button type="button" class="text-button add-material" :disabled="pending || restoring" @click="pickerOpen = true">＋ 添加资料（@）</button>
       <fieldset class="scope-controls" :disabled="pending || restoring">
         <legend>参考范围</legend>
         <label><input v-model="useCurrentPage" role="switch" type="checkbox" /><span class="switch-track" aria-hidden="true" />使用当前网页</label>
@@ -144,7 +173,10 @@ async function submit(): Promise<void> {
         <label><input v-model="allowWebSearch" role="switch" type="checkbox" /><span class="switch-track" aria-hidden="true" />允许联网</label>
       </fieldset>
       <p v-if="useCurrentPage && !context" class="scope-hint">等待网页读取。也可以关闭“使用当前网页”，只查个人知识库或联网资料。</p>
-      <p v-else-if="!useCurrentPage && !searchKnowledgeBase && !allowWebSearch" class="scope-hint">请至少选择一种资料范围。</p>
+      <p v-else-if="!useCurrentPage && !items.length && !searchKnowledgeBase && !allowWebSearch" class="scope-hint">请至少选择一种资料范围。</p>
+      <p v-if="hasUnready" class="scope-hint">请先完成指定网页的读取，或移除无法读取的资料。</p>
+      <p v-if="selectedUrls.length > 3" class="source-warning">最多使用 3 篇网页，请移除一篇资料或关闭当前网页。</p>
+      <p v-if="transferTooLarge" class="source-warning">网页正文合计超过 8 MiB 传输容量，请减少本次资料。</p>
       <button type="submit" class="primary-button submit-button" :disabled="!canSubmit">
         {{ pending ? "正在研究，请稍候…" : "开始研究 →" }}
       </button>
@@ -156,6 +188,7 @@ async function submit(): Promise<void> {
     <p v-if="error" class="error-message" role="alert">{{ error }}</p>
     <p v-if="sessionNotice" class="source-note" role="status">{{ sessionNotice }}</p>
 
+    <MaterialPicker :open="pickerOpen" :selected-urls="selectedUrls" :selected-note-ids="noteIds" @close="pickerOpen = false" @select="selectMaterial" />
     <div v-if="result" class="research-result">
       <div class="result-heading">
         <span class="result-mark" aria-hidden="true">✦</span>
@@ -164,7 +197,7 @@ async function submit(): Promise<void> {
           <h2>给你的回答</h2>
         </div>
       </div>
-      <p class="answer-context">{{ submittedContext ? `针对“${submittedContext.title}”` : '本次未使用网页' }} · {{ submittedQuestion }}<br v-if="answerScope" />{{ answerScope }}</p>
+      <p class="answer-context">{{ submittedPages.length ? submittedPages.map((page) => page.title).join('、') : '本次未使用网页' }} · {{ submittedQuestion }}<br v-if="answerScope" />{{ answerScope }}</p>
       <AnswerContent class="answer-text" :content="result.answer" :sources="sources" @citations-changed="citedSourceIds = $event" @open-note="emit('openNote', $event)" />
 
       <details class="source-group">
@@ -203,6 +236,7 @@ async function submit(): Promise<void> {
 <style scoped>
 .research-card { margin-top: 12px; }
 .research-card > form { display: grid; gap: 9px; }
+.add-material { justify-self: start; margin: 0 0 2px; }
 .research-card .submit-button { margin-top: 4px; }
 .scope-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 3px 0 5px; padding: 0; border: 0; }
 .scope-controls legend { margin-bottom: 8px; color: var(--muted); font-size: 11px; }

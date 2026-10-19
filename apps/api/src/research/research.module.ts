@@ -3,6 +3,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { LlmModule } from '../llm/llm.module';
 import { ReadCurrentContextTool } from './tools/read-current-context.tool';
 import { ResearchService } from './research.service';
+import { ResearchContextService } from './research-context.service';
 import { ResearchToolRunner } from './research-tool-runner.service';
 import { SearchKnowledgeBaseTool } from './tools/search-knowledge-base.tool';
 import { ResearchController } from './research.controller';
@@ -11,6 +12,7 @@ import { ReadWebPageTool } from './tools/read-web-page.tool';
 @Module({
   imports: [KnowledgeModule, LlmModule],
   providers: [
+    ResearchContextService,
     ReadCurrentContextTool,
     SearchKnowledgeBaseTool,
     WebSearchTool,

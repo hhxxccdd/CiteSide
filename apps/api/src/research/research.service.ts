@@ -10,7 +10,8 @@ import {
 import { SearchKnowledgeBaseTool } from "./tools/search-knowledge-base.tool";
 import { WebSearchSource } from "./tools/web-search.tool";
 import { ReadWebPageResult } from "./tools/read-web-page.tool";
-import { createResearchSources, noteSourceId, ResearchSource } from "./research-sources";
+import { createResearchSources, noteSourceId, pageSourceId, ResearchSource } from "./research-sources";
+import { ResearchContextService, type ResearchNote } from "./research-context.service";
 import type { ResearchInput, ResearchOptions } from "./dto/research-input.dto";
 
 export interface ResearchResult {
@@ -19,6 +20,7 @@ export interface ResearchResult {
   answer: string;
   sources: ResearchSource[];
   retrievedNotes: KnowledgeSearchResult[];
+  specifiedNotes: ResearchNote[];
   knowledgeSearchFailed: boolean;
   webSources: WebSearchSource[];
   webSearchFailed: boolean;
@@ -37,38 +39,41 @@ export class ResearchService {
     private readonly readCurrentContext: ReadCurrentContextTool,
     private readonly searchKnowledgeBase: SearchKnowledgeBaseTool,
     private readonly toolRunner: ResearchToolRunner,
+    private readonly contexts: ResearchContextService,
   ) {}
 
   async run(input: ResearchInput): Promise<ResearchResult> {
     const question = input.question?.trim();
-    const context = input.context;
-    if (!question || (!context && !input.options.searchKnowledgeBase && !input.options.allowWebSearch)) {
+    if (!question || (!input.materials.pages.length && !input.materials.noteIds.length && !input.options.searchKnowledgeBase && !input.options.allowWebSearch)) {
       throw new BadRequestException("问题和资料范围不能为空");
     }
 
     const runId = randomUUID();
     const options = { ...input.options };
-    const currentPage = context ? this.readCurrentContext.execute(context) : null;
+    const pages = input.materials.pages.map((page) => this.readCurrentContext.execute(page));
+    const specifiedNotes = await this.contexts.specifiedNotes(input.materials.noteIds);
     const knowledge = options.searchKnowledgeBase
-      ? await this.findRelevantNotes(question, currentPage?.title ?? "")
+      ? await this.findRelevantNotes(question, pages.map((page) => page.title).join(" / "))
       : { notes: [], failed: false };
-    if (!currentPage && !knowledge.notes.length && !options.allowWebSearch) {
+    const notes = this.contexts.mergeNotes(specifiedNotes, knowledge.notes);
+    if (!pages.length && !notes.length && !options.allowWebSearch) {
       return {
         runId, options,
         answer: knowledge.failed ? "个人知识库暂时无法检索，请稍后重试。本次没有其他可用资料。" : "个人知识库中没有找到能支持回答的相关笔记。可以换个问法，或添加网页、允许联网后再问。",
-        sources: [], retrievedNotes: [], knowledgeSearchFailed: knowledge.failed,
+        sources: [], retrievedNotes: [], specifiedNotes, knowledgeSearchFailed: knowledge.failed,
         webSources: [], webSearchFailed: false, readPage: null, webPageReadFailed: false,
       };
     }
-    const messages = this.buildMessages(question, currentPage, knowledge, options);
+    const messages = this.buildMessages(question, pages, notes, knowledge.failed, options);
     const toolAnswer = await this.toolRunner.answer(messages, options.allowWebSearch);
 
     return {
       runId, options,
       ...toolAnswer,
       retrievedNotes: knowledge.notes,
+      specifiedNotes,
       knowledgeSearchFailed: knowledge.failed,
-      sources: createResearchSources(currentPage, knowledge.notes, toolAnswer.webSources, toolAnswer.readPage),
+      sources: createResearchSources(pages, notes, toolAnswer.webSources, toolAnswer.readPage),
     };
   }
 
@@ -89,8 +94,9 @@ export class ResearchService {
 
   private buildMessages(
     question: string,
-    currentPage: CurrentPageContext | null,
-    knowledge: KnowledgeLookup,
+    pages: CurrentPageContext[],
+    notes: ResearchNote[],
+    knowledgeSearchFailed: boolean,
     options: ResearchOptions,
   ): QwenMessage[] {
     return [
@@ -98,7 +104,8 @@ export class ResearchService {
         role: "system",
         content:
           "你是 ResearchFlow 的阅读助手。优先根据本次提交的完整网页正文和相关笔记回答。" +
-          "currentPage 非空时，text 是完整主要正文，结合整篇内容回答；为 null 时没有提供网页，不能声称读过当前网页。" +
+          "pages 中每篇 text 都是完整主要正文，结合选定资料回答；pages 为空时没有提供网页，不能声称读过当前网页。" +
+          "notes 包含用户指定笔记与实际召回结果，指定资料可能与问题无关，请如实说明，不编造关联。" +
           "只能依据本次实际资料形成有来源支持的结论；资料不足时说明，不用常识冒充检索证据。" +
           (options.allowWebSearch ? "用户允许联网。需要最新信息或资料不足时，可以调用 web_search。" : "用户未允许联网，不能调用联网工具，也不能声称已搜索或核对网络资料。") +
           "最多搜索一次。搜索失败时说明情况，不要编造资料和来源。" +
@@ -118,10 +125,10 @@ export class ResearchService {
         role: "user",
         content: JSON.stringify({
           question,
-          currentPage: currentPage ? { ...currentPage, sourceId: "S1" } : null,
+          pages: pages.map((page, index) => ({ ...page, sourceId: pageSourceId(index) })),
           options,
-          retrievedNotes: knowledge.notes.map((note, index) => ({ ...note, sourceId: noteSourceId(index) })),
-          knowledgeSearchFailed: knowledge.failed,
+          notes: notes.map((note, index) => ({ ...note, sourceId: noteSourceId(index) })),
+          knowledgeSearchFailed,
         }),
       },
     ];

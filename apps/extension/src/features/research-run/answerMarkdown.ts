@@ -11,7 +11,7 @@ export function webUrl(value: string): string | null {
   }
 }
 
-const SOURCE_ID = "(?:S1|[NW][1-9]\\d*)";
+const SOURCE_ID = "(?:[SNW][1-9]\\d*)";
 
 function sourceHref(source: ResearchSource): string | null {
   return webUrl(source.url) ?? (source.kind === "note" && /^[1-9]\d{0,18}$/.test(source.noteId ?? "")
@@ -21,7 +21,7 @@ function sourceHref(source: ResearchSource): string | null {
 function sourceDefinitions(sources: ResearchSource[]): string {
   return sources.flatMap((source) => {
     const url = sourceHref(source);
-    if (!url || !/^(S1|[NW][1-9]\d*)$/.test(source.id)) return [];
+    if (!url || !/^[SNW][1-9]\d*$/.test(source.id)) return [];
     const safeUrl = url.replace(/</g, "%3C").replace(/>/g, "%3E");
     return [`[${source.id}]: <${safeUrl}> "rf-source:${source.id}"`];
   }).join("\n");
