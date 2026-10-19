@@ -4,6 +4,7 @@ import type { PageSnapshot } from "../page-context/pageContext.types";
 import { runResearch, type ResearchContext, type ResearchResult, type ResearchOptions } from "./researchApi";
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
 import AnswerContent from "./AnswerContent.vue";
+import SourceExcerpt from "./SourceExcerpt.vue";
 import { editableMarkdown } from "./answerMarkdown";
 import MaterialPicker from "../research-materials/MaterialPicker.vue";
 import MaterialList from "../research-materials/MaterialList.vue";
@@ -232,7 +233,7 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
           </summary>
           <p v-if="source.evidence === 'search-result'" class="source-note">搜索结果 · 原文未核对</p>
           <p v-else-if="source.evidence === 'page-text'" class="source-note">已读取网页正文</p>
-          <p v-if="source.excerpt" class="source-excerpt">{{ source.excerpt }}</p>
+          <SourceExcerpt v-if="source.excerpt" class="source-excerpt" :content="source.excerpt" />
           <button v-if="source.noteId" type="button" class="text-button" @click="emit('openNote', source.noteId)">查看笔记</button>
           <a v-if="isWebUrl(source.url)" :href="source.url" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
         </details>
@@ -288,7 +289,7 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
 .source-note { margin: 11px 0; color: #83948b; font-size: 11px; line-height: 1.5; }
 .source-item { margin-top: 8px; padding: 10px; border: 1px solid #e5ece6; border-radius: 8px; font-size: 11px; overflow-wrap: anywhere; }
 .source-item summary { cursor: pointer; color: #38554b; font-weight: 600; line-height: 1.5; }
-.source-item .source-excerpt { max-height: 190px; overflow: auto; padding: 9px 0; white-space: pre-wrap; line-height: 1.7; }
+.source-item .source-excerpt { max-height: 190px; overflow: auto; padding: 9px 0; }
 .source-type { margin-right: 7px; color: #27836a; font-size: 10px; }
 .source-item a { font-size: 11px; text-decoration: none; }
 .source-item a:hover { text-decoration: underline; }

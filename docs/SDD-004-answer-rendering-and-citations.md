@@ -58,6 +58,8 @@
 
 引用预览由 Vue 自己生成，内容来自来源表。支持鼠标悬停、键盘聚焦、点击跳转和 Escape 关闭；卡片会留在侧栏可见区域内。
 
+来源正文不再直接显示 Markdown 字符串。悬停卡片和展开资料统一使用 SourceExcerpt：标题、段落、加粗、列表、代码和表格排版后展示，链接只保留文字，避免标题锚点和网址占满预览；跳转仍通过独立的“打开原网页”。解析复用 markdown-it，输出经 DOMPurify 清理，不加载图片或执行网页 HTML。仅调整显示，保留原始提取内容供模型读取。
+
 保存笔记时保存含正常网页链接的 Markdown 正文，不依赖某次问答临时的来源表。旧笔记的内部引用定义在进入编辑区时也会转成具名链接。笔记详情继续复用 Markdown 展示。
 
 ## 为什么点来源后回答消失，怎样修
@@ -79,6 +81,7 @@
     apps/extension/src/features/research-run/
       answerMarkdown.ts                   Markdown 解析、清理和引用识别
       AnswerContent.vue                  排版后的正文与引用预览
+      SourceExcerpt.vue                  共用的只读来源正文，不显示 Markdown 标记
       ResearchRun.vue                    连接回答、来源表和保存入口
       researchApi.ts                     补充 sources 的响应类型
       researchSession.ts                 按浏览器窗口暂存最近一次完成的问答

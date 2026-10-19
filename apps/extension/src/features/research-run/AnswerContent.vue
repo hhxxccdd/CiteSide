@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { renderAnswer, webUrl } from "./answerMarkdown";
 import type { ResearchSource } from "./researchApi";
+import SourceExcerpt from "./SourceExcerpt.vue";
 
 defineOptions({ inheritAttrs: false });
 const props = withDefaults(defineProps<{ content: string; sources?: ResearchSource[] }>(), {
@@ -96,7 +97,7 @@ onUnmounted(() => {
       <span class="citation-kind">{{ active.kind === 'page' ? '网页正文' : active.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
       <strong>{{ active.title }}</strong>
       <p class="citation-evidence">{{ active.evidence === 'search-result' ? '搜索结果 · 原文未核对' : active.evidence === 'page-text' ? '已读取网页正文' : active.kind === 'note' ? '已保存的笔记片段' : '本次任务的原文' }}</p>
-      <p v-if="active.excerpt" class="citation-excerpt">{{ active.excerpt }}</p>
+      <SourceExcerpt v-if="active.excerpt" class="citation-excerpt" :content="active.excerpt" />
       <button v-if="active.noteId" type="button" class="text-button" @click="openNote(active.noteId)">查看笔记</button>
       <a v-if="webUrl(active.url)" :href="webUrl(active.url)!" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
       <p class="citation-url">{{ active.url }}</p>
@@ -131,7 +132,7 @@ onUnmounted(() => {
 .citation-kind { display: block; margin-bottom: 5px; color: #277766; font-size: 10px; font-weight: 700; }
 .citation-preview strong { display: block; font-size: 13px; }
 .citation-evidence { margin: 5px 0 9px; color: #7a8e80; font-size: 10px; }
-.citation-excerpt { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 5; -webkit-box-orient: vertical; margin: 0 0 10px; white-space: pre-wrap; }
+.citation-excerpt { max-height: 130px; overflow: hidden; margin: 0 0 10px; }
 .citation-preview a { color: #176a55; }
 .citation-url { margin: 5px 0 0; color: #8a9b90; font-size: 10px; }
 </style>
