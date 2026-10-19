@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { defineAsyncComponent, onMounted, ref } from "vue";
 import AnswerContent from "../research-run/AnswerContent.vue";
 import { editableMarkdown } from "../research-run/answerMarkdown";
+const KnowledgeEditor = defineAsyncComponent(() => import("./KnowledgeEditor.vue"));
 import {
   deleteKnowledgeEntry,
   getKnowledgeEntry,
@@ -169,7 +170,7 @@ onMounted(async () => {
         <label for="edit-knowledge-title">标题</label>
         <input id="edit-knowledge-title" v-model="title" :disabled="busy" type="text" />
         <label for="edit-knowledge-content">正文</label>
-        <textarea id="edit-knowledge-content" v-model="content" :disabled="busy" rows="8" />
+        <KnowledgeEditor id="edit-knowledge-content" v-model="content" :disabled="busy" />
         <div class="button-row">
           <button type="submit" class="primary-button" :disabled="busy || !title.trim() || !content.trim()">
             {{ busy ? "保存中…" : "保存修改" }}

@@ -86,7 +86,7 @@
       researchApi.ts                     补充 sources 的响应类型
       researchSession.ts                 按浏览器窗口暂存最近一次完成的问答
 
-知识库详情复用 AnswerContent，保存组件保留引用对应的网址。第一版不加入通用编辑器，也不增加新的 Agent 工具。
+知识库详情复用 AnswerContent，保存组件保留引用对应的网址。保存和修改笔记的正文已采用共用 KnowledgeEditor.vue 可视化编辑，避免让用户面对 Markdown 源码；内部保存格式沿用 Markdown。编辑器复用 Tiptap，仅在编辑时加载，不增加新的 Agent 工具。
 
 ## 做完后怎样检查
 

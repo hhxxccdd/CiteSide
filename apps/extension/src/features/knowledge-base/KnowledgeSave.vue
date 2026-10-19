@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { defineAsyncComponent, ref, watch } from "vue";
 import { createKnowledgeEntry } from "./knowledgeApi";
 import type { KnowledgeDraft } from "./knowledgeDraft.types";
+const KnowledgeEditor = defineAsyncComponent(() => import("./KnowledgeEditor.vue"));
 
 const props = defineProps<{
   answer: string;
@@ -65,7 +66,7 @@ async function save(): Promise<void> {
       <label for="knowledge-title">标题</label>
       <input id="knowledge-title" v-model="title" :disabled="saving" type="text" />
       <label for="knowledge-content">正文</label>
-      <textarea id="knowledge-content" v-model="content" :disabled="saving" rows="8" />
+      <KnowledgeEditor id="knowledge-content" v-model="content" :disabled="saving" />
       <div class="context-box save-context">
         <p><strong>原问题</strong>{{ question }}</p>
         <p><strong>主要网页来源</strong>{{ sourceTitle || '本次没有设置网页来源' }}</p>
