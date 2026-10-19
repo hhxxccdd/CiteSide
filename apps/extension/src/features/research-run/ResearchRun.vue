@@ -217,10 +217,12 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
       </div>
       <p class="answer-context">{{ submittedPages.length ? submittedPages.map((page) => page.title).join('、') : '本次未使用网页' }} · {{ submittedQuestion }}<br v-if="answerScope" />{{ answerScope }}</p>
       <AnswerContent class="answer-text" :content="result.answer" :sources="sources" @citations-changed="citedSourceIds = $event" @open-note="emit('openNote', $event)" />
+      <p v-if="sources.length && !citedSourceIds.length" class="source-warning" role="status">本次回答未提供可核对的正文引用。下方资料仅表示进入过问答流程，不代表支持上述结论；具体数据和“已核实”的说法请先核对原文。</p>
 
       <details class="source-group">
         <summary>查看参考资料 <span>{{ sources.length }} 项</span></summary>
-        <p class="source-note">把鼠标放在正文带下划线的引用文字上，即可查看来源。是否支持结论，请核对原文。</p>
+        <p v-if="citedSourceIds.length" class="source-note">把鼠标放在回答中带下划线的引用文字上，即可查看来源。引用是否支持结论，请核对原文。</p>
+        <p v-else-if="sources.length" class="source-note">回答中尚无可核对的引用。你可以展开以下资料核对原文；这里不会替模型给句子指定来源。</p>
         <p v-if="!sources.length" class="source-note">本次没有可预览的来源信息。</p>
         <details v-for="source in sources" :key="source.id" class="source-item">
           <summary>
