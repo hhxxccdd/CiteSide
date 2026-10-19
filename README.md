@@ -2,7 +2,7 @@
 
 Chrome 侧栏扩展与本地 API 的项目骨架。产品范围见 [PRD](docs/PRD.md)。
 数据库选型及与 MySQL 的取舍见 [数据库选型说明](docs/database-choice.md)。
-选区与侧栏预览设计见 [SDD-001](docs/SDD-001-page-context.md)，单次提问任务设计见 [SDD-002](docs/SDD-002-single-task-agent.md)，知识库设计见 [SDD-003](docs/SDD-003-knowledge-base.md)，回答排版与正文引用见 [SDD-004](docs/SDD-004-answer-rendering-and-citations.md)。
+网页正文读取设计见 [SDD-001](docs/SDD-001-page-context.md)，单次提问任务设计见 [SDD-002](docs/SDD-002-single-task-agent.md)，知识库设计见 [SDD-003](docs/SDD-003-knowledge-base.md)，回答排版与正文引用见 [SDD-004](docs/SDD-004-answer-rendering-and-citations.md)。本轮资料范围、@ 网页与笔记、切页状态以及分步实施计划先看 [SDD-005](docs/SDD-005-research-materials.md)。
 
 ## 目录
 
@@ -63,3 +63,7 @@ API 健康检查：`http://127.0.0.1:3000/api/health`。该接口同时检查 Po
 修改扩展代码后重新构建，并在 `chrome://extensions` 点击刷新。也可运行 `npm run dev:extension` 持续构建，然后手动刷新扩展。
 
 当前侧栏已支持选区预览、确认、提问、查看一次性返回的回答和参考资料、编辑后确认保存笔记，以及在“我的知识”中查找、查看、修改和删除笔记。后端已支持知识库向量检索、按需联网搜索与网页阅读。第一版闭环接下来还要完成流式回答、真实进度和停止重试。API Key 只放在后端环境变量，不写入扩展或仓库。
+
+## 新一轮设计（尚未实现）
+
+计划将必须选区改为读取网页正文，支持 @ 当前窗口其他网页与笔记，独立控制知识库搜索和联网。切页保留草稿与原任务资料；先走通普通问答，再补流式进度。当前代码仍是选区版本，请勿把新 SDD 的目标接口当作现有接口使用。
