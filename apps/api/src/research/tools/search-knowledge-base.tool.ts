@@ -29,8 +29,8 @@ export class SearchKnowledgeBaseTool {
 
   async execute(args: {
     query: string;
-    selectionText?:string
+    pageContext?: string
   }): Promise<KnowledgeSearchResult[]> {
-    return this.knowledge.search(args.query,args.selectionText);
+    return this.knowledge.search(args.query, args.pageContext);
   }
 }

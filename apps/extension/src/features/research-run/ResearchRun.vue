@@ -1,18 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import type { PageSelection } from "../page-context/useSelectionPreview";
-import { runResearch, type ResearchResult } from "./researchApi";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import type { PageSnapshot } from "../page-context/pageContext.types";
+import { runResearch, type ResearchContext, type ResearchResult } from "./researchApi";
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
 import AnswerContent from "./AnswerContent.vue";
 import { editableMarkdown } from "./answerMarkdown";
 import { loadCompletedResearch, saveCompletedResearch } from "./researchSession";
 
-const props = defineProps<{ confirmed: PageSelection | null }>();
+const props = defineProps<{ context: PageSnapshot | null }>();
 const emit = defineEmits<{ saved: [id: string] }>();
-
 const question = ref("");
 const result = ref<ResearchResult | null>(null);
-const submittedContext = ref<PageSelection | null>(null);
+const submittedContext = ref<ResearchContext | null>(null);
 const submittedQuestion = ref("");
 const completedRun = ref(0);
 const pending = ref(false);
@@ -24,23 +23,12 @@ const sources = computed(() => result.value?.sources ?? []);
 const noteContent = computed(() => editableMarkdown(result.value?.answer ?? "", sources.value));
 let controller: AbortController | null = null;
 let requestNumber = 0;
-let activeContext: PageSelection | null = null;
-
-watch(() => props.confirmed, (selection) => {
-  if (!pending.value || (selection?.tabId === activeContext?.tabId &&
-      selection?.url === activeContext?.url &&
-      selection?.text === activeContext?.text)) return;
-  requestNumber += 1;
-  controller?.abort();
-  controller = null;
-  pending.value = false;
-  activeContext = null;
-  error.value = "网页或选区已变化，本次提问已中断。已完成的回答仍然保留。";
-});
+let disposed = false;
 
 onMounted(async () => {
   try {
     const saved = await loadCompletedResearch();
+    if (disposed) return;
     if (saved) {
       result.value = saved.result;
       submittedContext.value = saved.context;
@@ -49,81 +37,61 @@ onMounted(async () => {
       completedRun.value += 1;
     }
   } catch {
-    sessionNotice.value = "上次回答暂时无法恢复。";
+    if (!disposed) sessionNotice.value = "上次回答暂时无法恢复。";
   } finally {
-    restoring.value = false;
+    if (!disposed) restoring.value = false;
   }
 });
 
-onUnmounted(() => { requestNumber += 1; controller?.abort(); });
+// 切页不会卸载本组件，也不会修改已提交的正文快照。
+onUnmounted(() => { disposed = true; requestNumber += 1; controller?.abort(); });
 
 function isWebUrl(url: string): boolean {
-  try {
-    return ["http:", "https:"].includes(new URL(url).protocol);
-  } catch {
-    return false;
-  }
+  try { return ["http:", "https:"].includes(new URL(url).protocol); }
+  catch { return false; }
 }
 
 async function submit(): Promise<void> {
-  const selection = props.confirmed;
+  const page = props.context;
   const text = question.value.trim();
-  if (pending.value || restoring.value || !selection || !text) return;
+  if (pending.value || restoring.value || !page || page.completeness !== "full" || !text) return;
 
-  error.value = "";
-  let tab: chrome.tabs.Tab | undefined;
-  try {
-    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  } catch {
-    error.value = "无法确认当前网页，请重新打开侧栏后重试。";
-    return;
-  }
-  if (!tab || tab.id !== selection.tabId || tab.url !== selection.url ||
-      props.confirmed?.tabId !== selection.tabId || props.confirmed?.url !== selection.url ||
-      props.confirmed?.text !== selection.text) {
-    error.value = "当前网页或选区已经变化，请重新确认文字。";
-    return;
-  }
-
+  const context: ResearchContext = {
+    title: page.title, url: page.url, text: page.text,
+    capturedAt: page.capturedAt, completeness: "full",
+  };
   controller?.abort();
-  controller = new AbortController();
+  const requestController = new AbortController();
+  controller = requestController;
   const currentRequest = ++requestNumber;
   pending.value = true;
-  activeContext = selection;
-
+  error.value = "";
   try {
-    const answer = await runResearch(text, {
-      title: selection.title,
-      url: selection.url,
-      text: selection.text,
-      truncated: selection.truncated,
-    }, controller.signal);
-    if (currentRequest === requestNumber) {
-      result.value = answer;
-      submittedContext.value = selection;
-      submittedQuestion.value = text;
-      completedRun.value += 1;
-      pending.value = false;
-      activeContext = null;
-      sessionNotice.value = "";
-      try {
-        await saveCompletedResearch({ question: text, context: selection, result: answer });
-      } catch {
-        if (currentRequest === requestNumber) sessionNotice.value = "回答已显示，但暂存失败。关闭侧栏后可能无法恢复。";
-      }
+    const currentWindow = await chrome.windows.getCurrent();
+    const [tab] = await chrome.tabs.query({ active: true, windowId: currentWindow.id });
+    if (currentRequest !== requestNumber) return;
+    if (tab?.id !== page.tabId || tab.url !== page.url || tab.status === "loading" || props.context?.id !== page.id) {
+      throw new Error("网页已变化，请等待当前网页正文读取完成后再提问。");
+    }
+    const answer = await runResearch(text, context, requestController.signal);
+    if (currentRequest !== requestNumber) return;
+    result.value = answer;
+    submittedContext.value = context;
+    submittedQuestion.value = text;
+    completedRun.value += 1;
+    pending.value = false;
+    sessionNotice.value = "";
+    try {
+      await saveCompletedResearch({ question: text, context, result: answer });
+    } catch {
+      if (currentRequest === requestNumber) sessionNotice.value = "回答已显示，但暂存失败。关闭侧栏后可能无法恢复。";
     }
   } catch (cause) {
     if (currentRequest === requestNumber) {
-      error.value = cause instanceof Error && cause.name !== "AbortError"
-        ? cause.message
-        : "提问已中断，请重试。";
+      error.value = cause instanceof Error && cause.name !== "AbortError" ? cause.message : "提问已中断，请重试。";
     }
   } finally {
-    if (currentRequest === requestNumber) {
-      pending.value = false;
-      controller = null;
-      activeContext = null;
-    }
+    if (currentRequest === requestNumber) { pending.value = false; controller = null; }
   }
 }
 </script>
@@ -131,7 +99,6 @@ async function submit(): Promise<void> {
 <template>
   <section class="panel research-card">
     <div class="panel-heading">
-      <span class="step-number">03</span>
       <span class="eyebrow">提出问题</span>
     </div>
     <form @submit.prevent="submit">
@@ -140,10 +107,11 @@ async function submit(): Promise<void> {
         id="research-question"
         v-model="question"
         :disabled="pending || restoring"
-        :placeholder="confirmed ? '例如：这段话在实际开发中怎么用？' : '先确认上方的网页选区，再输入问题'"
+        :placeholder="context ? '例如：总结这篇文章，并解释它的核心观点' : '可以先输入问题，网页正文读取完成后即可开始'"
         rows="4"
+        maxlength="4000"
       />
-      <button type="submit" class="primary-button submit-button" :disabled="!confirmed || !question.trim() || pending || restoring">
+      <button type="submit" class="primary-button submit-button" :disabled="!context || !question.trim() || pending || restoring">
         {{ pending ? "正在研究，请稍候…" : "开始研究 →" }}
       </button>
     </form>
@@ -171,13 +139,13 @@ async function submit(): Promise<void> {
         <p v-if="!sources.length" class="source-note">本次没有可预览的来源信息。</p>
         <details v-for="source in sources" :key="source.id" class="source-item">
           <summary>
-            <span class="source-type">{{ source.kind === 'selection' ? '当前选区' : source.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
+            <span class="source-type">{{ source.kind === 'page' ? '网页正文' : source.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
             {{ source.title }}
             <span v-if="citedSourceIds.includes(source.id)" class="cited-tag">已引用</span>
           </summary>
           <p v-if="source.evidence === 'search-result'" class="source-note">搜索结果 · 原文未核对</p>
           <p v-else-if="source.evidence === 'page-text'" class="source-note">已读取网页正文</p>
-          <p v-if="source.excerpt" class="selection-text">{{ source.excerpt }}</p>
+          <p v-if="source.excerpt" class="source-excerpt">{{ source.excerpt }}</p>
           <a v-if="isWebUrl(source.url)" :href="source.url" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
         </details>
       </details>
@@ -218,7 +186,7 @@ async function submit(): Promise<void> {
 .source-note { margin: 11px 0; color: #83948b; font-size: 11px; line-height: 1.5; }
 .source-item { margin-top: 8px; padding: 10px; border: 1px solid #e5ece6; border-radius: 8px; font-size: 11px; overflow-wrap: anywhere; }
 .source-item summary { cursor: pointer; color: #38554b; font-weight: 600; line-height: 1.5; }
-.source-item .selection-text { padding: 9px 0; }
+.source-item .source-excerpt { max-height: 190px; overflow: auto; padding: 9px 0; white-space: pre-wrap; line-height: 1.7; }
 .source-type { margin-right: 7px; color: #27836a; font-size: 10px; }
 .source-item a { font-size: 11px; text-decoration: none; }
 .source-item a:hover { text-decoration: underline; }

@@ -5,11 +5,11 @@ import type { WebSearchSource } from "./tools/web-search.tool";
 
 export interface ResearchSource {
   id: string;
-  kind: "selection" | "note" | "web";
+  kind: "page" | "note" | "web";
   title: string;
   url: string;
   excerpt: string;
-  evidence: "selection" | "note" | "search-result" | "page-text";
+  evidence: "note" | "search-result" | "page-text";
 }
 
 export function noteSourceId(index: number): string {
@@ -35,8 +35,8 @@ export function createResearchSources(
   readPage: ReadWebPageResult | null,
 ): ResearchSource[] {
   return [
-    { id: "S1", kind: "selection", title: page.title, url: page.url,
-      excerpt: page.text.slice(0, 1200), evidence: "selection" },
+    { id: "S1", kind: "page", title: page.title, url: page.url,
+      excerpt: page.text.slice(0, 1200), evidence: "page-text" },
     ...notes.map((note, index): ResearchSource => ({
       id: noteSourceId(index), kind: "note", title: note.title,
       url: note.sourceUrl, excerpt: note.content.slice(0, 1200), evidence: "note",

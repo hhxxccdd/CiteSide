@@ -78,9 +78,9 @@ onUnmounted(() => {
   <div v-bind="$attrs" class="markdown-body" @mouseover="showPreview" @mouseout="scheduleClose" @focusin="showPreview" @focusout="scheduleClose" v-html="rendered.html" />
   <Teleport to="body">
     <aside v-if="active" class="citation-preview" :style="previewStyle" aria-label="引用来源预览" @mouseenter="keepOpen" @mouseleave="scheduleClose" @focusin="keepOpen" @focusout="scheduleClose">
-      <span class="citation-kind">{{ active.kind === 'selection' ? '当前选区' : active.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
+      <span class="citation-kind">{{ active.kind === 'page' ? '网页正文' : active.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
       <strong>{{ active.title }}</strong>
-      <p class="citation-evidence">{{ active.evidence === 'search-result' ? '搜索结果 · 原文未核对' : active.evidence === 'page-text' ? '已读取网页正文' : active.kind === 'note' ? '已保存的笔记片段' : '本次确认的原文' }}</p>
+      <p class="citation-evidence">{{ active.evidence === 'search-result' ? '搜索结果 · 原文未核对' : active.evidence === 'page-text' ? '已读取网页正文' : active.kind === 'note' ? '已保存的笔记片段' : '本次任务的原文' }}</p>
       <p v-if="active.excerpt" class="citation-excerpt">{{ active.excerpt }}</p>
       <a v-if="webUrl(active.url)" :href="webUrl(active.url)!" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
       <p class="citation-url">{{ active.url }}</p>

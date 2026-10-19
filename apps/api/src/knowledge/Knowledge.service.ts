@@ -148,16 +148,16 @@ export class KnowledgeService {
 
   async search(
     question: string,
-    selectionText = "",
+    pageContext = "",
   ): Promise<KnowledgeSearchResult[]> {
     const text = question.trim();
     if (!text) {
       throw new BadRequestException("搜索问题不能为空");
     }
 
-    const selection = selectionText.trim().slice(0, 1500);
-    const retrievalText = selection
-      ? `问题：${text}\n当前网页选区：${selection}`
+    const context = pageContext.trim().slice(0, 1500);
+    const retrievalText = context
+      ? `问题：${text}\n网页背景：${context}`
       : text;
 
     const vector = await this.embedding.embed(retrievalText);
@@ -187,7 +187,7 @@ export class KnowledgeService {
 
     const selectedIds = await this.relevance.selectRelevantIds(
       text,
-      selection,
+      context,
       candidates,
     );
     const selectedSet = new Set(selectedIds);

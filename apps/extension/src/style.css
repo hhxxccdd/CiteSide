@@ -24,7 +24,6 @@ a { color: var(--accent); }
 .eyebrow { margin: 0; color: #277766; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
 h2 { margin: 0 0 10px; font-size: 17px; line-height: 1.4; letter-spacing: -.02em; }
 .description { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.selection-text { max-height: 190px; overflow: auto; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #3a5049; font-size: 12px; line-height: 1.7; }
 
 .primary-button, .secondary-button, .ghost-button, .danger-button { width: 100%; min-height: 38px; padding: 9px 13px; border-radius: 9px; font-size: 12px; font-weight: 700; transition: background .15s, transform .15s; }
 .primary-button { border: 1px solid var(--accent); background: var(--accent); color: #fff; box-shadow: 0 3px 8px #176a552a; }

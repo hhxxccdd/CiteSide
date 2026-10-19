@@ -4,14 +4,15 @@ export interface CurrentPageContext {
   title: string;
   url: string;
   text: string;
-  truncated: boolean;
+  completeness: "full";
+  capturedAt: string;
 }
 
 export const READ_CURRENT_CONTEXT_DEFINITION = {
   type: 'function',
   function: {
     name: 'read_current_context',
-    description: '读取用户这次提问已确认的当前网页选区',
+    description: '读取本次提问提交的完整网页正文快照',
     parameters: {
       type: 'object',
       properties: {},

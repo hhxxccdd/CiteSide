@@ -2,7 +2,8 @@ export interface ResearchContext {
   title: string;
   url: string;
   text: string;
-  truncated: boolean;
+  completeness: "full";
+  capturedAt: string;
 }
 
 export interface ResearchResult {
@@ -25,11 +26,11 @@ export interface ResearchResult {
 
 export interface ResearchSource {
   id: string;
-  kind: "selection" | "note" | "web";
+  kind: "page" | "note" | "web";
   title: string;
   url: string;
   excerpt: string;
-  evidence: "selection" | "note" | "search-result" | "page-text";
+  evidence: "note" | "search-result" | "page-text";
 }
 
 export async function runResearch(
@@ -45,10 +46,13 @@ export async function runResearch(
   });
 
   if (!response.ok) {
+    const details: unknown = await response.json().catch(() => null);
+    const message = details && typeof details === "object" && "message" in details &&
+      typeof details.message === "string" ? details.message : null;
     throw new Error(
-      response.status >= 500
+      message ?? (response.status >= 500
         ? "本地服务处理失败，请检查后端是否正常运行。"
-        : "提问内容未通过检查，请重新选择网页文字后重试。",
+        : "问题或网页正文未通过检查，请重新读取网页后重试。"),
     );
   }
 

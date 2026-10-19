@@ -10,11 +10,7 @@ import { SearchKnowledgeBaseTool } from "./tools/search-knowledge-base.tool";
 import { WebSearchSource } from "./tools/web-search.tool";
 import { ReadWebPageResult } from "./tools/read-web-page.tool";
 import { createResearchSources, noteSourceId, ResearchSource } from "./research-sources";
-
-export interface ResearchInput {
-  question: string;
-  context: CurrentPageContext;
-}
+import type { ResearchInput } from "./dto/research-input.dto";
 
 export interface ResearchResult {
   answer: string;
@@ -44,11 +40,11 @@ export class ResearchService {
     const question = input.question?.trim();
     const context = input.context;
     if (!question || !context?.title || !context?.url || !context?.text) {
-      throw new BadRequestException("问题和已确认的网页选区不能为空");
+      throw new BadRequestException("问题和完整网页正文不能为空");
     }
 
     const currentPage = this.readCurrentContext.execute(context);
-    const knowledge = await this.findRelevantNotes(question, currentPage.text);
+    const knowledge = await this.findRelevantNotes(question, currentPage.title);
     const messages = this.buildMessages(question, currentPage, knowledge);
     const toolAnswer = await this.toolRunner.answer(messages);
 
@@ -62,12 +58,12 @@ export class ResearchService {
 
   private async findRelevantNotes(
     question: string,
-    selectionText: string,
+    pageTitle: string,
   ): Promise<KnowledgeLookup> {
     try {
       const notes = await this.searchKnowledgeBase.execute({
         query: question,
-        selectionText,
+        pageContext: pageTitle,
       });
       return { notes, failed: false };
     } catch {
@@ -84,7 +80,8 @@ export class ResearchService {
       {
         role: "system",
         content:
-          "你是 ResearchFlow 的阅读助手。优先根据当前网页选区和相关笔记回答。" +
+          "你是 ResearchFlow 的阅读助手。优先根据本次提交的完整网页正文和相关笔记回答。" +
+          "currentPage.text 是网页主要正文，分析时结合整篇内容，不要只解释开头或要求用户先选中文字。" +
           "只有需要最新信息，或现有资料不足时，才调用 web_search。" +
           "最多搜索一次。搜索失败时说明情况，不要编造资料和来源。" +
           "搜索摘要不等于读过网页原文；如果要用搜索结果支持结论，" +

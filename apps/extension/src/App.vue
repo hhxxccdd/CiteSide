@@ -1,19 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { useSelectionPreview } from "./features/page-context/useSelectionPreview";
-import SelectionPreview from "./features/page-context/SelectionPreview.vue";
+import { useCurrentPage } from "./features/page-context/useCurrentPage";
 import CurrentPageCard from "./features/page-context/CurrentPageCard.vue";
 import ResearchRun from "./features/research-run/ResearchRun.vue";
 import KnowledgeManager from "./features/knowledge-base/KnowledgeManager.vue";
 
 const {
   page,
-  preview,
-  confirmed,
-  confirmPreview,
-  ignorePreview,
-  clearConfirmed,
-} = useSelectionPreview();
+  snapshot, state, notice, tabsAccess, read, refresh, authorize, authorizeTabs,
+} = useCurrentPage();
 
 type ConnectionState = "checking" | "ready" | "unavailable";
 const connection = ref<ConnectionState>("checking");
@@ -65,18 +60,12 @@ onMounted(checkConnection);
     </nav>
 
     <div v-show="view === 'research'" class="workspace-body">
-      <CurrentPageCard />
-
-      <SelectionPreview
-        v-if="page"
-        :preview="preview"
-        :confirmed="confirmed"
-        @confirm="confirmPreview"
-        @ignore="ignorePreview"
-        @clear="clearConfirmed"
+      <CurrentPageCard
+        :page="page" :state="state" :notice="notice" :tabs-access="tabsAccess"
+        @read="read($event)" @refresh="refresh" @authorize="authorize" @authorize-tabs="authorizeTabs"
       />
 
-      <ResearchRun :confirmed="confirmed" @saved="openKnowledge" />
+      <ResearchRun :context="state === 'ready' ? snapshot : null" @saved="openKnowledge" />
     </div>
 
     <KnowledgeManager

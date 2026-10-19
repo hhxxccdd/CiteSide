@@ -1,16 +1,15 @@
-import type { PageSelection } from "../page-context/useSelectionPreview";
-import type { ResearchResult } from "./researchApi";
+import type { ResearchContext, ResearchResult } from "./researchApi";
 
 export interface CompletedResearch {
   question: string;
-  context: PageSelection;
+  context: ResearchContext;
   result: ResearchResult;
 }
 
 async function sessionKey(): Promise<string> {
   const window = await chrome.windows.getCurrent();
   if (window.id === undefined) throw new Error("无法确定当前浏览器窗口");
-  return `completedResearch:${window.id}`;
+  return `completedPageResearch:v2:${window.id}`;
 }
 
 export async function loadCompletedResearch(): Promise<CompletedResearch | null> {
@@ -18,6 +17,7 @@ export async function loadCompletedResearch(): Promise<CompletedResearch | null>
   const saved = (await chrome.storage.session.get(key))[key] as CompletedResearch | undefined;
   if (!saved || typeof saved.question !== "string" ||
       typeof saved.context?.text !== "string" || typeof saved.context?.url !== "string" ||
+      saved.context.completeness !== "full" || typeof saved.context.capturedAt !== "string" ||
       typeof saved.result?.answer !== "string") return null;
   return saved;
 }
