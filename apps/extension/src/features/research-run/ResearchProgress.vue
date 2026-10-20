@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { ResearchStep } from "./useResearchRun";
-import AnswerContent from "./AnswerContent.vue";
 import { webUrl } from "./answerMarkdown";
 
 const props = defineProps<{
   phase: "idle" | "running" | "completed" | "stopped" | "failed";
   steps: ResearchStep[];
-  answer: string;
   question: string;
   canRetry: boolean;
 }>();
@@ -44,10 +42,6 @@ const displaySteps = computed(() => props.steps.map((step) => ({ ...step,
         </li>
       </ol>
     </details>
-    <div v-if="answer && phase !== 'completed'" class="live-answer">
-      <p class="progress-note">{{ phase === 'running' ? '正在生成，完成后会整理引用。' : '以下是停止或中断前收到的部分内容。' }}</p>
-      <AnswerContent :content="answer" :sources="[]" />
-    </div>
   </section>
 </template>
 
@@ -71,7 +65,6 @@ summary { cursor: pointer; font-size: 12px; color: #426c5e; margin-top: 10px; }
 li[data-state='failed'] { color: #a94536; }
 small { display: block; margin-top: 3px; color: inherit; opacity: .85; }
 .progress-note { color: #6f827a; font-size: 11px; line-height: 1.6; }
-.live-answer { border-top: 1px solid #dbe8e1; margin-top: 12px; overflow-wrap: anywhere; }
 @keyframes progress-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinning { animation: none !important; } }
 </style>

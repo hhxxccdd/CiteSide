@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from "vue";
 import type { PageSnapshot } from "../page-context/pageContext.types";
-import { type ResearchContext, type ResearchResult } from "./researchApi";
+import { type ResearchContext, type ResearchResult, type ResearchSource } from "./researchApi";
 import { useResearchRun } from "./useResearchRun";
 import ResearchProgress from "./ResearchProgress.vue";
 import KnowledgeSave from "../knowledge-base/KnowledgeSave.vue";
@@ -36,8 +36,10 @@ const completedRun = ref(0);
 const completed = shallowRef<CompletedResearch | null>(null);
 const noteDraft = ref<KnowledgeDraft | null>(null);
 const citedSourceIds = ref<string[]>([]);
+const draftSources: ResearchSource[] = [];
+const showPrevious = ref(false);
 const run = useResearchRun({
-  beforeStart: () => flushWorkspace(),
+  beforeStart: () => { showPrevious.value = false; return flushWorkspace(); },
   completed: async (answer, attempt) => {
     result.value = answer;
     submittedPages.value = attempt.pages.map((page) => ({ ...page, completeness: "full" }));
@@ -51,17 +53,24 @@ const run = useResearchRun({
   },
 });
 const { pending, unfinishedRun, error, phase, steps, liveAnswer, lastAttempt } = run;
+const hasPartialAnswer = computed(() => !pending.value && (phase.value === "stopped" || phase.value === "failed") && Boolean(liveAnswer.value));
+const showingDraft = computed(() => pending.value || hasPartialAnswer.value && !showPrevious.value);
+const visiblePages = computed(() => showingDraft.value ? lastAttempt.value?.pages ?? [] : submittedPages.value);
+const visibleQuestion = computed(() => showingDraft.value ? lastAttempt.value?.question ?? "" : submittedQuestion.value);
 const sources = computed(() => result.value?.sources ?? []);
 const noteContent = computed(() => editableMarkdown(result.value?.answer ?? "", sources.value));
 const canSubmit = computed(() => Boolean(question.value.trim()) && !pending.value && !restoring.value &&
   (!useCurrentPage.value || props.context !== null) && !hasUnready.value && selectedUrls.value.length <= 3 && !transferTooLarge.value &&
   (requestPages.value.length > 0 || noteIds.value.length > 0 || searchKnowledgeBase.value || allowWebSearch.value));
-const answerScope = computed(() => [
-  submittedPages.value.length ? `${submittedPages.value.length} 篇网页` : "",
-  result.value?.specifiedNotes?.length ? `${result.value.specifiedNotes.length} 条指定笔记` : "",
-  submittedOptions.value?.searchKnowledgeBase ? "搜索个人知识库" : "",
-  submittedOptions.value?.allowWebSearch ? "允许联网" : "",
-].filter(Boolean).join(" · "));
+const answerScope = computed(() => {
+  const options = showingDraft.value ? lastAttempt.value?.options : submittedOptions.value;
+  const noteCount = showingDraft.value ? lastAttempt.value?.noteIds.length : result.value?.specifiedNotes?.length;
+  return [visiblePages.value.length ? `${visiblePages.value.length} 篇网页` : "",
+    noteCount ? `${noteCount} 条指定笔记` : "",
+    options?.searchKnowledgeBase ? "搜索个人知识库" : "",
+    options?.allowWebSearch ? "允许联网" : "",
+  ].filter(Boolean).join(" · ");
+});
 const primarySource = computed(() => submittedPages.value[0] ?? sources.value.find((source) =>
   source.kind === "web" && source.evidence === "page-text") ?? null);
 
@@ -180,58 +189,62 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
         {{ pending ? "正在研究，请稍候…" : "开始研究 →" }}
       </button>
     </form>
-    <ResearchProgress :phase="phase" :steps="steps" :answer="liveAnswer" :question="lastAttempt?.question ?? ''"
+    <ResearchProgress :phase="phase" :steps="steps" :question="lastAttempt?.question ?? ''"
       :can-retry="Boolean(lastAttempt) && !pending && !restoring" @stop="run.stop" @retry="run.retry" />
     <p v-if="error" :class="phase === 'stopped' ? 'source-note' : 'error-message'" :role="phase === 'stopped' ? 'status' : 'alert'">{{ error }}</p>
     <p v-if="sessionNotice" class="source-note" role="status">{{ sessionNotice }} <button type="button" class="text-button" @click="flushWorkspace">重试暂存</button></p>
 
     <MaterialPicker :open="pickerOpen" :selected-urls="selectedUrls" :selected-note-ids="noteIds" @close="pickerOpen = false" @select="selectMaterial" />
-    <div v-if="result" class="research-result">
+    <div v-if="result || showingDraft" class="research-result">
       <div class="result-heading">
         <span class="result-mark" aria-hidden="true">✦</span>
         <div>
-          <span class="eyebrow">研究结果</span>
+          <span class="eyebrow">{{ !showingDraft && (phase === 'failed' || phase === 'stopped') ? '上次完成的回答' : '研究结果' }}</span>
           <h2>给你的回答</h2>
         </div>
       </div>
-      <p class="answer-context">{{ submittedPages.length ? submittedPages.map((page) => page.title).join('、') : '本次未使用网页' }} · {{ submittedQuestion }}<br v-if="answerScope" />{{ answerScope }}</p>
-      <AnswerContent class="answer-text" :content="result.answer" :sources="sources" @citations-changed="citedSourceIds = $event" @open-note="emit('openNote', $event)" />
-      <p v-if="sources.length && !citedSourceIds.length" class="source-warning" role="status">本次回答未提供可核对的正文引用。下方资料仅表示进入过问答流程，不代表支持上述结论；具体数据和“已核实”的说法请先核对原文。</p>
+      <p class="answer-context">{{ visiblePages.length ? visiblePages.map((page) => page.title).join('、') : '本次未使用网页' }} · {{ visibleQuestion }}<br v-if="answerScope" />{{ answerScope }}</p>
+      <button v-if="hasPartialAnswer && result" type="button" class="text-button answer-switch" @click="showPrevious = !showPrevious">{{ showPrevious ? '查看本次未完成内容' : '返回上一份完整回答' }}</button>
+      <p v-if="showingDraft" class="source-note" role="status">{{ pending ? (liveAnswer ? '正在生成，完成后会整理引用。' : '正在处理本次问题…') : '这是本次未完成的部分内容，尚未整理引用。' }}</p>
+      <AnswerContent v-if="showingDraft || result" class="answer-text" :content="showingDraft ? liveAnswer : result?.answer ?? ''" :sources="showingDraft ? draftSources : sources" @citations-changed="citedSourceIds = $event" @open-note="emit('openNote', $event)" />
+      <div v-if="result" v-show="!showingDraft" class="answer-details">
+        <p v-if="sources.length && !citedSourceIds.length" class="source-warning" role="status">本次回答未提供可核对的正文引用。下方资料仅表示进入过问答流程，不代表支持上述结论；具体数据和“已核实”的说法请先核对原文。</p>
 
-      <details class="source-group">
-        <summary>查看参考资料 <span>{{ sources.length }} 项</span></summary>
-        <p v-if="citedSourceIds.length" class="source-note">把鼠标放在回答中带下划线的引用文字上，即可查看来源。引用是否支持结论，请核对原文。</p>
-        <p v-else-if="sources.length" class="source-note">回答中尚无可核对的引用。你可以展开以下资料核对原文；这里不会替模型给句子指定来源。</p>
-        <p v-if="!sources.length" class="source-note">本次没有可预览的来源信息。</p>
-        <details v-for="source in sources" :key="source.id" class="source-item">
-          <summary>
-            <span class="source-type">{{ source.kind === 'page' ? '网页正文' : source.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
-            {{ source.title }}
-            <span v-if="citedSourceIds.includes(source.id)" class="cited-tag">已引用</span>
-          </summary>
-          <p v-if="source.evidence === 'search-result'" class="source-note">搜索结果 · 原文未核对</p>
-          <p v-else-if="source.evidence === 'page-text'" class="source-note">已读取网页正文</p>
-          <SourceExcerpt v-if="source.excerpt" class="source-excerpt" :content="source.excerpt" />
-          <button v-if="source.noteId" type="button" class="text-button" @click="emit('openNote', source.noteId)">查看笔记</button>
-          <a v-if="isWebUrl(source.url)" :href="source.url" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
+        <details class="source-group">
+          <summary>查看参考资料 <span>{{ sources.length }} 项</span></summary>
+          <p v-if="citedSourceIds.length" class="source-note">把鼠标放在回答中带下划线的引用文字上，即可查看来源。引用是否支持结论，请核对原文。</p>
+          <p v-else-if="sources.length" class="source-note">回答中尚无可核对的引用。你可以展开以下资料核对原文；这里不会替模型给句子指定来源。</p>
+          <p v-if="!sources.length" class="source-note">本次没有可预览的来源信息。</p>
+          <details v-for="source in sources" :key="source.id" class="source-item">
+            <summary>
+              <span class="source-type">{{ source.kind === 'page' ? '网页正文' : source.kind === 'note' ? '个人笔记' : '联网资料' }}</span>
+              {{ source.title }}
+              <span v-if="citedSourceIds.includes(source.id)" class="cited-tag">已引用</span>
+            </summary>
+            <p v-if="source.evidence === 'search-result'" class="source-note">搜索结果 · 原文未核对</p>
+            <p v-else-if="source.evidence === 'page-text'" class="source-note">已读取网页正文</p>
+            <SourceExcerpt v-if="source.excerpt" class="source-excerpt" :content="source.excerpt" />
+            <button v-if="source.noteId" type="button" class="text-button" @click="emit('openNote', source.noteId)">查看笔记</button>
+            <a v-if="isWebUrl(source.url)" :href="source.url" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>
+          </details>
         </details>
-      </details>
-      <p v-if="result.knowledgeSearchFailed" class="source-warning">个人笔记检索失败。</p>
-      <p v-if="result.webSearchFailed" class="source-warning">联网搜索失败。</p>
-      <p v-if="result.webPageReadFailed" class="source-warning" role="status">
-        网页原文读取失败<span v-if="result.webPageReadError">：{{ result.webPageReadError.title }}。{{ result.webPageReadError.reason }}</span><span v-else>。</span>
-      </p>
+        <p v-if="result.knowledgeSearchFailed" class="source-warning">个人笔记检索失败。</p>
+        <p v-if="result.webSearchFailed" class="source-warning">联网搜索失败。</p>
+        <p v-if="result.webPageReadFailed" class="source-warning" role="status">
+          网页原文读取失败<span v-if="result.webPageReadError">：{{ result.webPageReadError.title }}。{{ result.webPageReadError.reason }}</span><span v-else>。</span>
+        </p>
 
-      <KnowledgeSave
-        :key="completedRun"
-        :draft="noteDraft"
-        :answer="noteContent"
-        :question="submittedQuestion"
-        :source-title="primarySource?.title ?? ''"
-        :source-url="primarySource?.url ?? ''"
-        @update:draft="noteDraft = $event"
-        @saved="emit('saved', $event)"
-      />
+        <KnowledgeSave
+          :key="completedRun"
+          :draft="noteDraft"
+          :answer="noteContent"
+          :question="submittedQuestion"
+          :source-title="primarySource?.title ?? ''"
+          :source-url="primarySource?.url ?? ''"
+          @update:draft="noteDraft = $event"
+          @saved="emit('saved', $event)"
+        />
+      </div>
     </div>
   </section>
 </template>
