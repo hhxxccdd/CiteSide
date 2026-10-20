@@ -62,7 +62,9 @@ export class ResearchToolRunner {
     }
     const decision = await researchStep(execution, "判断是否需要联网", () => this.qwen.chatWithTools(messages, [
       WEB_SEARCH_DEFINITION,
-    ], execution?.answerOptions()));
+    ], execution?.answerOptions()), (result) => result.tool_calls?.length
+      ? "模型请求调用工具，接下来校验并执行"
+      : "模型未请求联网搜索，本次直接作答");
     if (!decision.tool_calls?.length) {
       return {
         answer: this.requireAnswer(decision),

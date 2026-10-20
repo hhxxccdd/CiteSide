@@ -15,7 +15,7 @@ export const WEB_SEARCH_DEFINITION = {
   type: 'function',
   function: {
     name: 'web_search',
-    description: '需要最新信息或现有资料不足时，联网查找相关资料',
+    description: '补充现有资料无法覆盖的问题，包括具体使用案例、实际项目和最新信息。用户已允许联网时，遇到必要依据缺失应调用本工具补查；现有资料足够时无需调用。',
     parameters: {
       type: 'object',
       properties: {

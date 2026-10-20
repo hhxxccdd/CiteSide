@@ -44,6 +44,10 @@ before(async () => {
     }
     response.setHeader('Content-Type', 'text/event-stream');
     if (data.tools?.length) {
+      if (currentMode === 'no-search') {
+        frame(response, { choices: [{ delta: { content: '[泛型保留类型关系][S1]。' }, finish_reason: 'stop' }] });
+        frame(response, '[DONE]'); response.end(); return;
+      }
       const name = data.tools[0].function.name;
       const args = name === 'web_search' ? '{"query":"泛型"}' : '{"sourceIndex":1}';
       frame(response, { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-' + name, function: { name, arguments: args.slice(0, 5) } }] } }] });
@@ -130,6 +134,17 @@ test('工具参数按片段组装，进度对应真实搜索和阅读', async ()
   const readStep = startedSteps.find((event) => event.label === '读取网页原文');
   assert.deepEqual(readStep.links, searchDone.links);
   assert.ok(readStep.sequence > searchDone.sequence);
+});
+
+test('允许联网但模型直接作答时，记录跳过搜索而不伪造执行', async () => {
+  mode = 'no-search'; const beforeSearch = searches, beforeRead = reads;
+  const events = await collect(input(true));
+  assert.equal(searches, beforeSearch); assert.equal(reads, beforeRead);
+  assert.equal(events.at(-1).type, 'run.completed');
+  assert.deepEqual(events.at(-1).result.webSources, []);
+  assert.equal(events.at(-1).result.options.allowWebSearch, true);
+  assert.ok(!events.some((event) => event.type === 'step.started' && event.label === '联网搜索'));
+  assert.ok(events.some((event) => event.type === 'step.completed' && event.detail === '模型未请求联网搜索，本次直接作答'));
 });
 
 test('工具失败有真实失败事件，同时可以使用已有资料完成回答', async () => {
