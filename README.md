@@ -74,6 +74,8 @@ API 健康检查：`http://127.0.0.1:3000/api/health`。该接口同时检查 Po
 
 已取消三万字符限制，完整正文直接交给模型。单篇 8 MiB 正文是传输资源上限；服务端模型容量超限时明确提示，不悄悄截取。切换网页更新当前页信息，但已提交的任务继续使用原正文，保留回答与保存编辑内容。正文和回答不会自动存入知识库。
 
+联网阅读也已取消前 12,000 字符截断，提取到的主要正文完整交给模型。HTML 下载超过 8 MiB 时明确报错；引用悬停仍显示短预览，不影响模型收到的正文。
+
 后端运行 npm run dev:api 时源文件修改会自动重启；若运行的是生产命令，需要重新构建并重启。当前 POST /api/research/run 接收 question、materials（pages 和 noteIds）、options。每篇正文包含 title、url、text、capturedAt、completeness（必须是 full）。旧版单篇 context 请求继续兼容，不能与 materials 同时提供；旧选区 truncated 字段已移除。
 
 ### 全文直传与界面简化

@@ -58,17 +58,15 @@ export class ReadWebPageTool {
     const main = $("main").first();
     const root = article.length ? article : main.length ? main : $("body");
 
-    const paragraphs = root
-      .find("h1, h2, h3, h4, p, li, pre, blockquote")
-      .map((_index, element) => $(element).text().replace(/\s+/g, " ").trim())
-      .get()
-      .filter(Boolean);
-
-    const text = (paragraphs.length ? paragraphs.join("\n") : root.text())
+    // 保留主要正文中的文字和表格；不因只挑选段落而漏掉直接文本节点。
+    // 仅为块元素补换行，再统一取文字，避免嵌套段落被重复收集。
+    root.find("br").replaceWith("\n");
+    root.find("h1, h2, h3, h4, h5, h6, p, li, pre, blockquote, div, section, tr").append("\n");
+    root.find("th, td").append("\t");
+    const text = root.text()
       .replace(/[ \t]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")
-      .trim()
-      .slice(0, 12_000);
+      .trim();
 
     if (!text) {
       throw new Error("网页没有可读取的正文");
@@ -121,7 +119,8 @@ export class ReadWebPageTool {
   }
 
   private async downloadHtml(url: URL, requestSignal?: AbortSignal): Promise<string> {
-    const maxBytes = 1_000_000; // 最多下载约 1 MB
+    // HTML 下载的资源上限，不是正文字符数或模型 Token 预算；超限直接报错。
+    const maxBytes = 8 * 1024 * 1024;
     const signal = requestSignal ? AbortSignal.any([requestSignal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000);
     try {
       const response = await this.fetchHtml(url, signal);
@@ -185,7 +184,7 @@ export class ReadWebPageTool {
     const declaredSize = Number(response.headers.get("content-length"));
     if (declaredSize > maxBytes) {
       await response.body?.cancel();
-      throw new Error("网页内容过大");
+      throw new Error("网页 HTML 超过 8 MiB 下载上限，本次未截取正文");
     }
     if (!response.body) {
       throw new Error("网页没有返回正文");
@@ -203,7 +202,7 @@ export class ReadWebPageTool {
         totalBytes += value.byteLength;
         if (totalBytes > maxBytes) {
           await reader.cancel();
-          throw new Error("网页内容过大");
+          throw new Error("网页 HTML 超过 8 MiB 下载上限，本次未截取正文");
         }
         chunks.push(value);
       }

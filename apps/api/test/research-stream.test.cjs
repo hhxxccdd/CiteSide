@@ -15,6 +15,8 @@ const { ResearchService } = require(path.join(dist, 'research/research.service')
 const { ResearchToolRunner } = require(path.join(dist, 'research/research-tool-runner.service'));
 const { ResearchContextService } = require(path.join(dist, 'research/research-context.service'));
 const { ResearchCitationsService } = require(path.join(dist, 'research/research-citations.service'));
+const { ResearchExecution } = require(path.join(dist, 'research/research-execution'));
+const { ReadWebPageTool } = require(path.join(dist, 'research/tools/read-web-page.tool'));
 
 let app, provider, url, mode = 'normal', searchAborted = 0, readAborted = 0, modelAborted = 0;
 let requests = [], searches = 0, reads = 0;
@@ -194,4 +196,58 @@ test('旧 JSON 接口仍可请求；非法输入在发送事件流前返回 400'
   const invalid = await fetch(url + '/api/research/run/stream', { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: '' }) });
   assert.equal(invalid.status, 400); assert.match(invalid.headers.get('content-type'), /application\/json/);
+});
+
+test('联网长文末尾、直接文字和表格完整进入模型请求，HTML 可超过旧 1 MB 限制', async () => {
+  mode = 'normal'; requests = [];
+  const tail = 'LONG_ARTICLE_FINAL_EVIDENCE';
+  const html = `<html><title>长文章</title><body><nav>REMOVE_NAV</nav><article>
+    <h1>正文</h1><p>${'正文内容。'.repeat(4000)}</p>
+    <div>DIRECT_TEXT_EVIDENCE</div><table><tr><td>TABLE_EVIDENCE</td></tr></table>
+    <blockquote><p>NESTED_EVIDENCE</p></blockquote><p>${tail}</p>
+    <!--${'padding'.repeat(160000)}--></article><script>REMOVE_SCRIPT</script></body></html>`;
+  assert.ok(Buffer.byteLength(html) > 1_000_000);
+  const reader = new ReadWebPageTool();
+  // 仅替换下载连接，仍执行真实的容量检查、HTML 提取和工具消息组装。
+  reader.fetchHtml = async () => new Response(html, { headers: {
+    'content-type': 'text/html', 'content-length': String(Buffer.byteLength(html)),
+  } });
+  const values = { DASHSCOPE_API_KEY: 'test-only', DASHSCOPE_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+    QWEN_CHAT_MODEL: 'fixture', QWEN_MAX_OUTPUT_TOKENS: '100' };
+  const qwen = new QwenClient({ get: (key) => values[key], getOrThrow: (key) => values[key] });
+  const runner = new ResearchToolRunner(qwen, { execute: async () => ({ summary: '长文线索',
+    sources: [{ title: '长文章', url: 'https://example.com/ts' }] }) }, reader);
+  const execution = new ResearchExecution('full-web-page-test', new AbortController().signal, () => {});
+  const result = await runner.answer([{ role: 'user', content: '请核对文章末尾的依据' }], true, execution);
+  assert.equal(result.webPageReadFailed, false);
+  assert.ok(result.readPage.text.length > 12000);
+  assert.ok(result.readPage.text.endsWith(tail));
+  assert.match(result.readPage.text, /DIRECT_TEXT_EVIDENCE/);
+  assert.match(result.readPage.text, /TABLE_EVIDENCE/);
+  assert.equal(result.readPage.text.split('NESTED_EVIDENCE').length - 1, 1);
+  assert.doesNotMatch(result.readPage.text, /REMOVE_NAV|REMOVE_SCRIPT/);
+  const toolMessages = requests.at(-1).messages.filter((message) => message.role === 'tool');
+  const received = JSON.parse(toolMessages.at(-1).content);
+  assert.equal(received.text, result.readPage.text);
+  assert.ok(received.text.endsWith(tail));
+});
+
+test('联网 HTML 超过 8 MiB 时明确失败并取消下载，不返回截断正文', async () => {
+  const maxBytes = 8 * 1024 * 1024;
+  for (const declared of [true, false]) {
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(controller) {
+        if (!declared) { controller.enqueue(new Uint8Array(maxBytes)); controller.enqueue(new Uint8Array(1)); }
+      },
+      cancel() { cancelled = true; },
+    });
+    const reader = new ReadWebPageTool();
+    reader.fetchHtml = async () => new Response(body, { headers: {
+      'content-type': 'text/html', ...(declared ? { 'content-length': String(maxBytes + 1) } : {}),
+    } });
+    await assert.rejects(reader.execute({ url: 'https://example.com/long', allowedUrls: ['https://example.com/long'] }),
+      /HTML 超过 8 MiB 下载上限，本次未截取正文/);
+    assert.equal(cancelled, true);
+  }
 });
