@@ -3,14 +3,23 @@ import type {
 } from "./pageContext.types";
 
 export class PageReadError extends Error {
-  constructor(public readonly reason: "needs-permission" | "empty" | "changed" | "failed", message: string) {
+  constructor(public readonly reason: "needs-permission" | "empty" | "changed" | "unsupported" | "failed", message: string) {
     super(message);
   }
 }
 
+export function isReadablePageUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function sitePattern(url: string): string {
+  if (!isReadablePageUrl(url)) throw new PageReadError("unsupported", "此页面不支持读取，请打开普通 HTTP/HTTPS 网页。");
   const parsed = new URL(url);
-  if (!/^https?:$/.test(parsed.protocol)) throw new Error("只支持普通 HTTP/HTTPS 网页");
   // Chrome 站点匹配规则按协议和主机申请，不把 URL 端口当成主机的一部分。
   return `${parsed.protocol}//${parsed.hostname}/*`;
 }
@@ -27,6 +36,10 @@ export async function currentBrowserPage(windowId: number): Promise<BrowserPage 
 }
 
 export async function readBrowserPage(page: BrowserPage, fallback = false): Promise<PageSnapshot> {
+  // 所有调用者共用此入口；浏览器内部页不应进入脚本注入或授权流程。
+  if (!isReadablePageUrl(page.url)) {
+    throw new PageReadError("unsupported", "浏览器内部页和本地文件暂不支持读取，请打开普通 HTTP/HTTPS 网页。");
+  }
   const before = await chrome.tabs.get(page.tabId);
   if (before.url !== page.url || before.status === "loading") {
     throw new PageReadError("changed", "网页正在加载或已经跳转，请加载完成后重新读取。");

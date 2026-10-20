@@ -4,6 +4,7 @@ import { Dialog, DialogPanel, DialogTitle, Combobox, ComboboxInput, ComboboxOpti
 import { listKnowledgeEntries } from "../knowledge-base/knowledgeApi";
 import type { MaterialChoice } from "./material.types";
 import { pageKey } from "./material.types";
+import { isReadablePageUrl } from "../page-context/pageContextApi";
 
 const props = defineProps<{ open: boolean; selectedUrls: string[]; selectedNoteIds: string[] }>();
 const emit = defineEmits<{ close: []; select: [choice: MaterialChoice] }>();
@@ -36,7 +37,7 @@ async function load(): Promise<void> {
       const window = await chrome.windows.getCurrent();
       const tabs = await chrome.tabs.query({ windowId: window.id });
       if (current !== request || !props.open) return;
-      pages.value = tabs.flatMap((tab): MaterialChoice[] => tab.id !== undefined && tab.url && /^https?:\/\//.test(tab.url)
+      pages.value = tabs.flatMap((tab): MaterialChoice[] => tab.id !== undefined && tab.url && isReadablePageUrl(tab.url)
         ? [{ kind: "page", page: { tabId: tab.id, title: tab.title || tab.url, url: tab.url, loading: tab.status === "loading" } }] : []);
     } else {
       const entries = await listKnowledgeEntries(query.value, controller.signal);

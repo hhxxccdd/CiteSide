@@ -1,5 +1,5 @@
 import { onMounted, onUnmounted, ref } from "vue";
-import { currentBrowserPage, PageReadError, readBrowserPage, requestPageAccess } from "./pageContextApi";
+import { currentBrowserPage, isReadablePageUrl, PageReadError, readBrowserPage, requestPageAccess } from "./pageContextApi";
 import type { BrowserPage, PageReadState, PageSnapshot } from "./pageContext.types";
 
 export function useCurrentPage() {
@@ -49,7 +49,7 @@ export function useCurrentPage() {
       notice.value = "";
       if (!current) { state.value = "unsupported"; return; }
       if (!current.url) { state.value = "needs-permission"; return; }
-      if (!/^https?:\/\//.test(current.url)) { state.value = "unsupported"; return; }
+      if (!isReadablePageUrl(current.url)) { state.value = "unsupported"; return; }
       if (current.loading) { state.value = "loading"; return; }
       state.value = "available";
       await read();
@@ -62,7 +62,7 @@ export function useCurrentPage() {
 
   async function authorize(): Promise<void> {
     const target = page.value;
-    if (!target?.url || !/^https?:\/\//.test(target.url)) return;
+    if (!target?.url || !isReadablePageUrl(target.url)) return;
     try {
       const granted = await requestPageAccess(target);
       if (disposed || target.tabId !== page.value?.tabId || target.url !== page.value?.url) return;
