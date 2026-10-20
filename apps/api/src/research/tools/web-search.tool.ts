@@ -21,7 +21,7 @@ export const WEB_SEARCH_DEFINITION = {
       properties: {
         query: {
           type: 'string',
-          description: '要搜索的具体问题或关键词',
+          description: '针对原问题仍缺少的信息生成具体搜索词，优先查找相关官方文档、项目文档或源码；前一轮结果偏题时调整关键词，不重复相同搜索',
         },
       },
       required: ['query'],

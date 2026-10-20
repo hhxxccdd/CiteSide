@@ -24,8 +24,10 @@ export interface ResearchResult {
   webSources: Array<{ title: string; url: string }>;
   webSearchFailed: boolean;
   readPage: { title: string; url: string; text: string } | null;
+  readPages?: Array<{ title: string; url: string; text: string }>;
   webPageReadFailed: boolean;
   webPageReadError?: { title: string; url: string; reason: string };
+  webPageReadErrors?: Array<{ title: string; url: string; reason: string }>;
 }
 
 export interface ResearchSource {

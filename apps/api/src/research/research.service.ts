@@ -27,8 +27,10 @@ export interface ResearchResult {
   webSources: WebSearchSource[];
   webSearchFailed: boolean;
   readPage: ReadWebPageResult | null;
+  readPages: ReadWebPageResult[];
   webPageReadFailed: boolean;
   webPageReadError?: WebPageReadError;
+  webPageReadErrors: WebPageReadError[];
 }
 
 interface KnowledgeLookup {
@@ -68,13 +70,13 @@ export class ResearchService {
         runId, options,
         answer: knowledge.failed ? "个人知识库暂时无法检索，请稍后重试。本次没有其他可用资料。" : "个人知识库中没有找到能支持回答的相关笔记。可以换个问法，或添加网页、允许联网后再问。",
         sources: [], retrievedNotes: [], specifiedNotes, knowledgeSearchFailed: knowledge.failed,
-        webSources: [], webSearchFailed: false, readPage: null, webPageReadFailed: false,
+        webSources: [], webSearchFailed: false, readPage: null, readPages: [], webPageReadFailed: false, webPageReadErrors: [],
       };
     }
     const messages = this.buildMessages(question, pages, notes, knowledge.failed, options);
     execution?.signal.throwIfAborted();
     const toolAnswer = await this.toolRunner.answer(messages, options.allowWebSearch, execution);
-    const sources = createResearchSources(pages, notes, toolAnswer.webSources, toolAnswer.readPage);
+    const sources = createResearchSources(pages, notes, toolAnswer.webSources, toolAnswer.readPage, toolAnswer.readPages);
     const answer = await this.citations.ensureCitations(toolAnswer.answer, messages, sources, execution);
     execution?.signal.throwIfAborted();
 
@@ -125,7 +127,7 @@ export class ResearchService {
           (options.allowWebSearch
             ? "用户已允许联网，无需再次请求授权。先检查现有资料能否覆盖问题的每一部分；若缺少用户询问的具体案例、实际项目、最新信息或其他必要事实，应先调用 web_search 补查，再回答。已有资料能充分回答整个问题时可直接作答。不能把‘当前资料未提及’当作跳过必要搜索的理由。"
             : "用户未允许联网，不能调用联网工具，也不能声称已搜索或核对网络资料。") +
-          "最多搜索一次。搜索失败时说明情况，不要编造资料和来源。" +
+          "本轮最多搜索 2 次、阅读 3 篇网页。根据缺失信息搜索，优先阅读相关官方文档或项目源码；资料偏题或不足时可换词补查，足够时直接回答，不必用满次数。搜索失败时说明情况，不要编造资料和来源。" +
           "搜索摘要不等于读过网页原文；如果要用搜索结果支持结论，" +
           "优先调用 read_web_page 核对其中一篇。不得声称核对过未阅读的网页。" +
           "具体网站或项目采用了某项技术的断言，需要本次取得的网页正文或源码支持；搜索摘要只作查找线索，不直接证明这些实际应用细节。" +

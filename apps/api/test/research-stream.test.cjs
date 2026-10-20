@@ -45,15 +45,39 @@ before(async () => {
       response.end(JSON.stringify({ choices: [{ message: { content: '[泛型保留类型关系][S1]。' } }] })); return;
     }
     response.setHeader('Content-Type', 'text/event-stream');
+    const previousCalls = data.messages.flatMap((message) => message.tool_calls ?? []);
+    const searchCalls = previousCalls.filter((call) => call.function.name === 'web_search').length;
+    const readCalls = previousCalls.filter((call) => call.function.name === 'read_web_page').length;
     if (data.tools?.length) {
-      if (currentMode === 'no-search') {
+      let planned;
+      const tool = (name, args) => ({ id: `call-${name}-${previousCalls.length}`, type: 'function', function: { name, arguments: JSON.stringify(args) } });
+      if (currentMode === 'invalid-loop') planned = [tool('unknown', {})];
+      else if (currentMode === 'exhaust') planned = searchCalls === 0
+        ? [tool('web_search', { query: 'first' }), tool('web_search', { query: 'second' }), tool('web_search', { query: 'over-limit' })]
+        : [1, 2, 3, 4].map((index) => ({ ...tool('read_web_page', { sourceIndex: index }), id: 'read-' + index }));
+      else if (['follow-up', 'slow-follow-up-search'].includes(currentMode)) {
+        if (searchCalls === 0) planned = [tool('web_search', { query: 'KeepAlive 实际项目' })];
+        else if (readCalls === 0) planned = [tool('read_web_page', { sourceIndex: 1 })];
+        else if (searchCalls === 1) planned = [tool('web_search', { query: 'vue-element-admin cachedViews 官方文档' })];
+        else if (readCalls === 1) planned = [tool('read_web_page', { sourceIndex: 2 })];
+      } else if (currentMode === 'read-next') {
+        if (searchCalls === 0) planned = [tool('web_search', { query: '实际项目文档' })];
+        else if (readCalls < 2) planned = [tool('read_web_page', { sourceIndex: readCalls + 1 })];
+      } else if (currentMode === 'duplicate') {
+        if (previousCalls.length < 2) planned = [tool('web_search', { query: '泛型' })];
+        else if (previousCalls.length < 4) planned = [tool('read_web_page', { sourceIndex: 1 })];
+      } else if (currentMode !== 'no-search') {
+        if (!searchCalls) planned = [tool('web_search', { query: '泛型' })];
+        else if (!readCalls) planned = [tool('read_web_page', { sourceIndex: 1 })];
+      }
+      if (!planned) {
         frame(response, { choices: [{ delta: { content: '[泛型保留类型关系][S1]。' }, finish_reason: 'stop' }] });
         frame(response, '[DONE]'); response.end(); return;
       }
-      const name = data.tools[0].function.name;
-      const args = name === 'web_search' ? '{"query":"泛型"}' : '{"sourceIndex":1}';
-      frame(response, { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-' + name, function: { name, arguments: args.slice(0, 5) } }] } }] });
-      frame(response, { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(5) } }] }, finish_reason: 'tool_calls' }] });
+      frame(response, { choices: [{ delta: { tool_calls: planned.map((call, index) => ({ index, id: call.id,
+        function: { name: call.function.name, arguments: call.function.arguments.slice(0, 5) } })) } }] });
+      frame(response, { choices: [{ delta: { tool_calls: planned.map((call, index) => ({ index,
+        function: { arguments: call.function.arguments.slice(5) } })) }, finish_reason: 'tool_calls' }] });
     } else {
       frame(response, { choices: [{ delta: { content: '[泛型保留' } }] });
       if (currentMode === 'slow-model') { await delay(10_000, undefined, { signal: AbortSignal.timeout(200) }).catch(() => {}); if (response.destroyed) return; }
@@ -69,10 +93,24 @@ before(async () => {
   const qwen = new QwenClient({ get: (key) => values[key], getOrThrow: (key) => values[key] });
   const runner = new ResearchToolRunner(qwen, { execute: async (_args, signal) => {
     searches++; if (mode === 'slow-search') await abortable(signal, () => searchAborted++);
+    if (['follow-up', 'slow-follow-up-search'].includes(mode)) {
+      const second = _args.query.includes('cachedViews');
+      if (second && mode === 'slow-follow-up-search') await abortable(signal, () => searchAborted++);
+      return { summary: second ? '找到了官方项目文档' : '只有无关教程', sources: second
+        ? [{ title: '重复教程', url: 'https://example.com/tutorial#again' }, { title: '官方项目文档', url: 'https://project.example/docs' }]
+        : [{ title: '无关教程', url: 'https://example.com/tutorial' }] };
+    }
+    if (['exhaust', 'read-next'].includes(mode)) return { summary: '候选资料', sources: [1, 2, 3, 4].map((index) => ({
+      title: '网页' + index, url: `https://example.com/page-${index}`,
+    })) };
     return { summary: '搜索总结', sources: [{ title: 'TS 原文', url: 'https://example.com/ts' }] };
   } }, { execute: async (_args, signal) => {
     reads++; if (mode === 'slow-read') await abortable(signal, () => readAborted++);
     if (mode === 'failed-read') throw Error('网站要求安全验证');
+    if (mode === 'read-next' && _args.url.endsWith('page-1')) throw Error('第一篇需要登录');
+    if (['follow-up', 'slow-follow-up-search', 'exhaust', 'read-next'].includes(mode)) return {
+      title: '实际读取的网页', url: _args.url, text: _args.url.includes('project.example') ? '官方项目使用 KeepAlive 和 cachedViews。' : '没有所需案例的教程。',
+    };
     return { title: 'TS 原文', url: 'https://example.com/ts', text: '泛型保留类型关系。' };
   } });
   const research = new ResearchService({ execute: (value) => value }, { execute: async () => {
@@ -125,12 +163,12 @@ test('工具参数按片段组装，进度对应真实搜索和阅读', async ()
   const events = await collect(input(true));
   assert.equal(searches - beforeSearch, 1); assert.equal(reads - beforeRead, 1);
   assert.deepEqual(events.filter((e) => e.type === 'step.started').map((e) => e.label),
-    ['判断是否需要联网', '联网搜索', '判断是否需要阅读原文', '读取网页原文', '生成回答']);
+    ['判断是否需要联网', '联网搜索', '判断资料是否足够', '读取网页原文', '判断资料是否足够']);
   assert.equal(events.at(-1).result.readPage.title, 'TS 原文');
   assert.equal(events.filter((e) => e.type === 'step.completed').length, 5);
   const startedSteps = events.filter((event) => event.type === 'step.started');
   const searchStep = startedSteps.find((event) => event.label === '联网搜索');
-  assert.equal(searchStep.detail, '搜索：泛型');
+  assert.equal(searchStep.detail, '第 1/2 次搜索：泛型');
   const searchDone = events.find((event) => event.type === 'step.completed' && event.stepId === searchStep.stepId);
   assert.deepEqual(searchDone.links, [{ title: 'TS 原文', url: 'https://example.com/ts' }]);
   const readStep = startedSteps.find((event) => event.label === '读取网页原文');
@@ -147,6 +185,68 @@ test('允许联网但模型直接作答时，记录跳过搜索而不伪造执�
   assert.equal(events.at(-1).result.options.allowWebSearch, true);
   assert.ok(!events.some((event) => event.type === 'step.started' && event.label === '联网搜索'));
   assert.ok(events.some((event) => event.type === 'step.completed' && event.detail === '模型未请求联网搜索，本次直接作答'));
+});
+
+test('首篇无关后换词补查，来源去重且两篇已读原文引用都保留', async () => {
+  mode = 'follow-up'; requests = []; const beforeSearch = searches, beforeRead = reads;
+  const events = await collect(input(true));
+  const result = events.at(-1).result;
+  assert.equal(searches - beforeSearch, 2); assert.equal(reads - beforeRead, 2);
+  assert.deepEqual(result.webSources.map((source) => source.url), ['https://example.com/tutorial', 'https://project.example/docs']);
+  assert.equal(result.readPages.length, 2);
+  assert.equal(result.readPage.url, 'https://project.example/docs');
+  const sources = result.sources.filter((source) => source.kind === 'web');
+  assert.deepEqual(sources.map((source) => [source.id, source.evidence]), [['W1', 'page-text'], ['W2', 'page-text']]);
+  assert.match(sources[1].excerpt, /官方项目使用 KeepAlive/);
+  const searchSteps = events.filter((event) => event.type === 'step.started' && event.label === '联网搜索');
+  assert.match(searchSteps[1].detail, /第 2\/2 次搜索：vue-element-admin cachedViews 官方文档/);
+  const finalTools = requests.at(-1).messages.filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
+  assert.ok(finalTools.some((item) => item.text === '没有所需案例的教程。'));
+  assert.ok(finalTools.some((item) => item.text === '官方项目使用 KeepAlive 和 cachedViews。'));
+  assert.deepEqual(finalTools[2].sources.map((source) => [source.sourceId, source.sourceIndex]), [['W1', 1], ['W2', 2]]);
+});
+
+test('单篇阅读失败后可换另一篇，失败信息和已读来源分别保留', async () => {
+  mode = 'read-next'; const beforeRead = reads;
+  const events = await collect(input(true)); const result = events.at(-1).result;
+  assert.equal(reads - beforeRead, 2); assert.equal(result.readPages.length, 1);
+  assert.equal(result.readPages[0].url, 'https://example.com/page-2');
+  assert.equal(result.webPageReadErrors[0].reason, '第一篇需要登录');
+  assert.equal(result.sources.find((source) => source.id === 'W1').evidence, 'search-result');
+  assert.equal(result.sources.find((source) => source.id === 'W2').evidence, 'page-text');
+});
+
+test('同一批工具调用也受整次任务的 2 次搜索和 3 篇阅读限制', async () => {
+  mode = 'exhaust'; requests = []; const beforeSearch = searches, beforeRead = reads;
+  const events = await collect(input(true)); const result = events.at(-1).result;
+  assert.equal(searches - beforeSearch, 2); assert.equal(reads - beforeRead, 3);
+  assert.equal(result.readPages.length, 3);
+  assert.equal(requests.at(-1).tools, undefined);
+  const feedback = requests.at(-1).messages.filter((message) => message.role === 'tool').map((message) => message.content).join('\n');
+  assert.match(feedback, /最多搜索 2 次/); assert.match(feedback, /最多阅读 3 篇/);
+  assert.equal(events.at(-1).type, 'run.completed');
+});
+
+test('重复搜索词与已尝试网页不重复执行，无效调用受决策轮数限制', async () => {
+  mode = 'duplicate'; let beforeSearch = searches, beforeRead = reads;
+  await collect(input(true));
+  assert.equal(searches - beforeSearch, 1); assert.equal(reads - beforeRead, 1);
+  mode = 'invalid-loop'; requests = []; beforeSearch = searches; beforeRead = reads;
+  const events = await collect(input(true));
+  assert.equal(events.at(-1).type, 'run.completed');
+  assert.equal(searches, beforeSearch); assert.equal(reads, beforeRead);
+  assert.equal(requests.filter((request) => request.tools?.length).length, 7);
+  assert.equal(requests.at(-1).tools, undefined);
+});
+
+test('停止第二轮补查后取消真实搜索，不再阅读或生成答案', async () => {
+  mode = 'slow-follow-up-search'; requests = []; const beforeAbort = searchAborted;
+  const controller = new AbortController();
+  await assert.rejects(collect(input(true), { signal: controller.signal, receive: (event) => {
+    if (event.type === 'step.started' && event.label === '联网搜索' && event.detail.includes('第 2/2 次')) controller.abort();
+  } }), /abort/i);
+  await until(() => searchAborted > beforeAbort);
+  assert.equal(requests.length, 3);
 });
 
 test('工具失败有真实失败事件，同时可以使用已有资料完成回答', async () => {

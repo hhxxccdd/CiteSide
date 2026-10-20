@@ -36,7 +36,9 @@ export function createResearchSources(
   notes: ResearchNote[],
   webSources: WebSearchSource[],
   readPage: ReadWebPageResult | null,
+  readPages: ReadWebPageResult[] = [],
 ): ResearchSource[] {
+  const pagesRead = readPages.length ? readPages : readPage ? [readPage] : [];
   return [
     ...pages.map((page, index): ResearchSource => ({ id: pageSourceId(index), kind: "page", title: page.title, url: page.url,
       excerpt: page.text.slice(0, 1200), evidence: "page-text" })),
@@ -45,11 +47,11 @@ export function createResearchSources(
       url: note.sourceUrl, excerpt: note.content.slice(0, 1200), evidence: "note", noteId: note.id,
     })),
     ...webSources.map((source, index): ResearchSource => {
-      const wasRead = readPage !== null && sameUrl(source.url, readPage.url);
+      const pageRead = pagesRead.find((page) => sameUrl(source.url, page.url));
       return {
         id: webSourceId(index), kind: "web", title: source.title,
-        url: source.url, excerpt: wasRead ? readPage.text.slice(0, 1200) : "",
-        evidence: wasRead ? "page-text" : "search-result",
+        url: source.url, excerpt: pageRead ? pageRead.text.slice(0, 1200) : "",
+        evidence: pageRead ? "page-text" : "search-result",
       };
     }),
   ];

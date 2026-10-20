@@ -229,8 +229,13 @@ function selectMaterial(choice: MaterialChoice): void { void materials.add(choic
           </details>
         </details>
         <p v-if="result.knowledgeSearchFailed" class="source-warning">个人笔记检索失败。</p>
-        <p v-if="result.webSearchFailed" class="source-warning">联网搜索失败。</p>
-        <p v-if="result.webPageReadFailed" class="source-warning" role="status">
+        <p v-if="result.webSearchFailed" class="source-warning">有联网搜索失败，详情见执行记录。</p>
+        <template v-if="result.webPageReadErrors?.length">
+          <p v-for="failure in result.webPageReadErrors" :key="failure.url" class="source-warning" role="status">
+            未能读取：{{ failure.title }}。{{ failure.reason }}
+          </p>
+        </template>
+        <p v-else-if="result.webPageReadFailed" class="source-warning" role="status">
           网页原文读取失败<span v-if="result.webPageReadError">：{{ result.webPageReadError.title }}。{{ result.webPageReadError.reason }}</span><span v-else>。</span>
         </p>
 
