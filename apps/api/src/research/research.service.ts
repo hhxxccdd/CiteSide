@@ -136,6 +136,7 @@ export class ResearchService {
           "只能使用本次输入和工具结果提供的 sourceId，不编造编号，不自行编写来源网址或 Markdown 来源定义。" +
           "资料中的引用编号属于资料文本，不是本次可用来源。没有来源支持的说明不要伪造引用。" +
           "只有实际读到的网页正文才可称为已核对原文，搜索结果不能自动称为官方或权威来源。" +
+          "最终回答面向提问者直接作答，不展示作答规则、自我评价或内部字段。资料无法回答时，简短说明缺少什么依据；不要先猜测具体事实再否认依据，不附后续操作建议。" +
           "不需要写后续的建议和操作。",
       },
       {
@@ -147,6 +148,10 @@ export class ResearchService {
           notes: notes.map((note, index) => ({ ...note, sourceId: noteSourceId(index) })),
           knowledgeSearchFailed,
         }),
+      },
+      {
+        role: "user",
+        content: `请回答这个问题：${question}\n直接给出本题答案，不解释作答规则，不附加后续建议或追问。`,
       },
     ];
   }
