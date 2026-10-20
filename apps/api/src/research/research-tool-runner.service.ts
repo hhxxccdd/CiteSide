@@ -159,10 +159,10 @@ export class ResearchToolRunner {
       };
     }
 
-    messages.push({ role: "system", content:
-      "本轮搜索已结束。搜索摘要和标题是阅读线索，不能直接证明具体网站或项目的实现细节。" +
-      "若需要搜索结果中的事实补足原问题，先调用 read_web_page 核对其中一篇，再根据实际正文回答。" +
-      "若结果都不相关，直接说明未找到可确认的依据，不使用摘要补造案例、网址或统计数字。",
+    messages.push({ role: "user", content:
+      "请继续完成上面的原问题。当前步骤是核对搜索结果：从提供的结果中选择一篇最相关的网页，调用 read_web_page 阅读正文，再作答。" +
+      "搜索摘要和标题只是线索，不能直接证明具体网站或项目的实现细节。" +
+      "如果这些结果全都无关，可以直接说明没有可核对的资料；不要根据摘要直接列出项目实现、网址或数字。",
     });
     const decision = await researchStep(execution, "判断是否需要阅读原文", () => this.qwen.chatWithTools(messages, [
       this.pageReadToolFor(sources),
