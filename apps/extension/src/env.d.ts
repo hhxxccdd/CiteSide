@@ -6,3 +6,9 @@ declare module '*.vue' {
   export default component;
 }
 
+// 该插件未自带 TypeScript 声明，仅补充我们实际使用的表格转换接口。
+declare module 'turndown-plugin-gfm' {
+  import type TurndownService from 'turndown';
+  export const tables: TurndownService.Plugin;
+}
+
