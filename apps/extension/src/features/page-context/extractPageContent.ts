@@ -2,6 +2,7 @@ import { Readability } from "@mozilla/readability";
 import TurndownService from "turndown";
 import { tables } from "turndown-plugin-gfm";
 import type { ExtractedPage } from "./pageContext.types";
+import { normalizeCodeTables } from "../../shared/content/normalizeCodeTables";
 
 const PAGE_TRANSFER_BYTES = 8 * 1024 * 1024;
 
@@ -27,6 +28,7 @@ export function extractPageContent(
   copy.querySelectorAll(
     "script,style,noscript,nav,footer,aside,iframe,form,input,textarea,select,button,img,svg,video,audio,[role=navigation],[role=banner],[role=dialog]",
   ).forEach((element) => element.remove());
+  normalizeCodeTables(copy);
 
   let title = source.title || source.location.href;
   let root: HTMLElement | null;

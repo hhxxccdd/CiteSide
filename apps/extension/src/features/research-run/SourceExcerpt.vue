@@ -2,20 +2,36 @@
 import { computed } from "vue";
 import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";
+import { normalizeCodeTables } from "../../shared/content/normalizeCodeTables";
 
 const props = defineProps<{ content: string }>();
-const markdown = new MarkdownIt({ html: false, linkify: false });
+// 有些转换库会保留无表头的 HTML 表格；只在净化后的预览中渲染这些结构。
+const markdown = new MarkdownIt({ html: true, linkify: false });
 // 预览只显示文章文字；标题锚点和网页链接不再显示成一串地址。
 markdown.renderer.rules.link_open = () => "";
 markdown.renderer.rules.link_close = () => "";
 markdown.renderer.rules.image = (tokens, index) => markdown.utils.escapeHtml(tokens[index].content);
 markdown.renderer.rules.table_open = () => '<div class="excerpt-table"><table>';
 markdown.renderer.rules.table_close = () => "</table></div>";
-const html = computed(() => DOMPurify.sanitize(markdown.render(props.content), {
-  ALLOWED_TAGS: ["p", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "em", "s", "blockquote", "hr", "br", "ul", "ol", "li", "pre", "code", "table", "thead", "tbody", "tr", "th", "td", "div"],
-  ALLOWED_ATTR: ["class", "start"],
-  ALLOW_DATA_ATTR: false,
-}));
+const html = computed(() => {
+  const fragment = DOMPurify.sanitize(markdown.render(props.content), {
+    ALLOWED_TAGS: ["p", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "em", "s", "blockquote", "hr", "br", "ul", "ol", "li", "pre", "code", "table", "thead", "tbody", "tr", "th", "td", "div"],
+    ALLOWED_ATTR: ["start"],
+    ALLOW_DATA_ATTR: false,
+    RETURN_DOM_FRAGMENT: true,
+  });
+  normalizeCodeTables(fragment);
+  fragment.querySelectorAll("table").forEach((table) => {
+    if (table.closest(".excerpt-table")) return;
+    const wrapper = table.ownerDocument.createElement("div");
+    wrapper.className = "excerpt-table";
+    table.replaceWith(wrapper);
+    wrapper.append(table);
+  });
+  const container = document.createElement("div");
+  container.append(fragment);
+  return container.innerHTML;
+});
 </script>
 
 <template>
