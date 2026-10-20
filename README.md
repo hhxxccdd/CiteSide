@@ -1,123 +1,271 @@
-# ResearchFlow
+# CiteSide
 
-Chrome 侧栏扩展与本地 API 的项目骨架。产品范围见 [PRD](docs/PRD.md)。
-数据库选型及与 MySQL 的取舍见 [数据库选型说明](docs/database-choice.md)。
-网页正文读取设计见 [SDD-001](docs/SDD-001-page-context.md)，单次提问任务设计见 [SDD-002](docs/SDD-002-single-task-agent.md)，知识库设计见 [SDD-003](docs/SDD-003-knowledge-base.md)，回答排版与正文引用见 [SDD-004](docs/SDD-004-answer-rendering-and-citations.md)。本轮资料范围、@ 网页与笔记、切页状态以及分步实施计划先看 [SDD-005](docs/SDD-005-research-materials.md)。
+在 Chrome 侧栏阅读技术文章、提问、核对来源，再把有价值的回答整理进个人知识库。
 
-## 目录
+CiteSide 将网页全文问答、个人知识库 RAG 和有次数上限的工具调用结合起来。资料不足时，模型可以搜索并阅读其他网页；用户确认后，回答才会保存为笔记，供之后检索。
 
-- `apps/extension`：Vue 3 + TypeScript + Vite，打包为 Manifest V3 扩展。
-- `apps/api`：NestJS API，使用 `pg` 连接 PostgreSQL。
-- `compose.yaml`：本地 PostgreSQL。
+> 当前是本地运行的单人版本。扩展界面名称、代码目录和 npm workspace 名称暂沿用 **ResearchFlow**。
+
+## 可以做什么
+
+| 功能 | 使用方式 |
+| --- | --- |
+| 围绕网页全文提问 | 打开普通技术文章，读取正文后直接提问，无需选中文字 |
+| 组合多份资料 | 通过 `@` 或“添加资料”选择当前窗口的其他网页、指定个人笔记 |
+| 检索个人知识库 | 对问题生成向量，用 pgvector 召回候选笔记，再由模型筛选相关内容 |
+| 按资料缺口联网补查 | 模型选择搜索词和阅读目标，最多搜索 2 次、尝试阅读 3 篇网页 |
+| 查看真实执行过程 | 流式显示答案，执行记录展示实际搜索词、结果链接、阅读目标和失败原因 |
+| 停止与重试 | 随时停止，按原问题和原资料重试；生成中切换网页不会串用新页面 |
+| 核对回答来源 | 悬停正文引用查看来源信息和片段，点击打开原网页或个人笔记 |
+| 编辑并保存知识 | 修改标题和正文，确认后保存；支持笔记查看、筛选、修改和删除 |
+| 恢复会话草稿 | 同窗口重开侧栏可恢复已暂存的问题、资料、最近完成回答和笔记编辑内容 |
+
+默认使用当前网页、搜索个人知识库，联网默认关闭。三个范围开关相互独立；关闭知识库自动检索，仍可使用通过 `@` 明确指定的笔记。
+
+## 一次研究任务怎样完成
+
+```mermaid
+flowchart TD
+    A[网页正文、指定资料与问题] --> B[NestJS 固定本次任务和资料范围]
+    B --> C[按开关检索个人笔记]
+    C --> D[Qwen 判断资料是否足够]
+    D -->|不足且允许联网| E[搜索或阅读网页]
+    E --> D
+    D -->|足够或达到次数上限| F[流式回答与来源引用]
+    F --> G[用户编辑并确认保存]
+    G --> H[生成向量并保存到 PostgreSQL]
+    H -->|下次提问时检索| C
+```
+
+### 工具调用
+
+Qwen 通过 `tool_calls` 请求工具，后端校验并执行，再把结果交给模型。第一轮结果偏题时，可以调整关键词补查，也可以换一篇网页阅读。
+
+- 整次任务最多搜索 **2 次**、尝试阅读 **3 篇**，失败尝试也计入。
+- 资料足够时提前回答，不要求用满次数。
+- 重复搜索词、已尝试网页不重复执行；达到决策轮数上限后撤下工具收尾。
+- 两轮来源合并去重，已有引用标识保持稳定；未读结果与已读正文分别标记。
+- 关闭联网时不提供联网工具，后端也不执行联网操作。
+
+### 个人知识库 RAG
+
+保存笔记时，后端为标题和正文生成 **1024 维向量**。提问时按余弦距离召回最多 5 条候选，再由模型筛选最多 3 条相关笔记进入回答。
+
+网页正文采用全文直传，当前没有网页分段索引或分层总结。网页和回答都不会自动入库，保存由用户确认。
+
+## 技术栈
+
+| 部分 | 技术 |
+| --- | --- |
+| 浏览器扩展 | Chrome Manifest V3、Side Panel、Storage、Scripting |
+| 前端 | Vue 3、TypeScript、Vite、Headless UI |
+| 内容处理 | Mozilla Readability、Turndown、Cheerio |
+| 回答与编辑 | markdown-it、DOMPurify、Tiptap |
+| 后端 | NestJS、TypeScript、Node.js |
+| 数据库 | PostgreSQL、pgvector、node-postgres |
+| 模型服务 | 阿里云百炼 Qwen、Embedding、联网搜索 |
+| 流式通信 | POST + fetch 接收 SSE、eventsource-parser、AbortController |
+| 回归测试 | Node.js Test Runner、本地 HTTP 模型与工具替身 |
+
+## 项目结构
+
+```text
+apps/
+  extension/
+    public/manifest.json       扩展权限与入口配置
+    src/
+      background/              打开侧栏等后台入口
+      features/
+        page-context/          当前网页识别与正文读取
+        research-materials/    @ 网页和笔记选择
+        research-run/          任务、流式进度、引用与会话草稿
+        knowledge-base/        笔记管理与共用编辑器
+      shared/                  共用内容处理
+  api/
+    db/migrations/             数据库建表 SQL
+    src/
+      database/                PostgreSQL 连接
+      llm/                     Qwen 请求、流式解析与取消
+      knowledge/               笔记 CRUD、向量化与相关性筛选
+      research/                任务编排、工具循环、来源与引用
+        tools/                 知识库搜索、联网搜索、网页读取
+    test/                      研究任务回归测试
+docs/                          PRD、SDD、选型与问题复盘
+```
+
+`ResearchService` 组织任务，`ResearchToolRunner` 处理工具循环，具体工具各自负责外部调用。前端按功能目录组织，任务状态与正在浏览的页面分开保存。
 
 ## 本地启动
 
-需要 Node.js 20.19+ 和 npm。PostgreSQL 可以直接安装在 Windows，也可以用 Docker 启动，任选一种。
+### 1. 准备环境和依赖
 
-先安装依赖并准备 API 配置：
+需要：
+
+- Node.js 22.12+ 与 npm。
+- Chrome 116+。
+- 本机 PostgreSQL，当前项目使用 PostgreSQL 16，并已安装 pgvector。
+- 可调用聊天、向量与联网接口的百炼 API Key。
 
 ```powershell
+git clone https://github.com/hhxxccdd/CiteSide.git ResearchFlow
+cd ResearchFlow
 npm install
-Copy-Item apps/api/.env.example apps/api/.env
 ```
 
-### 方式一：Windows 本机安装 PostgreSQL
+在根目录安装即可。npm workspaces 会一起安装 `apps/api` 和 `apps/extension` 中声明的依赖。
 
-从 [PostgreSQL Windows 下载页](https://www.postgresql.org/download/windows/)获取安装程序。安装时记住 `postgres` 管理员密码，端口可保留默认的 `5432`。安装完成后，以 `postgres` 用户连接到 `postgres` 数据库，在 pgAdmin 或 SQL Shell（psql）中依次单独执行这两条 SQL：
+### 2. 初始化本机数据库
+
+已有项目数据库和表时跳过初始化。
+
+首次准备时，可以在 Navicat 中连接本机 PostgreSQL，用有创建权限的用户分别执行：
 
 ```sql
-CREATE ROLE researchflow LOGIN PASSWORD 'researchflow';
+CREATE ROLE researchflow LOGIN PASSWORD 'your_local_password';
 CREATE DATABASE researchflow OWNER researchflow;
 ```
 
-若你为项目用户设置了其他密码，修改 `apps/api/.env` 中的 `DATABASE_URL`。如果本机 PostgreSQL 使用了其他端口，也要同步修改 URL 中的端口。此方式不需要运行 Docker 命令。
+密码请替换为自己设置的本机密码。随后用有扩展创建权限的用户连接 **researchflow 数据库**，启用已安装的 pgvector：
 
-### 方式二：Docker 启动 PostgreSQL
-
-启动 Docker Desktop，然后运行：
-
-```powershell
-npm run db:up
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-容器会自动创建与 `apps/api/.env.example` 一致的项目用户和数据库。
+再用准备填写到 `DATABASE_URL` 的项目用户连接该数据库，执行 [001_create_knowledge_entries.sql](apps/api/db/migrations/001_create_knowledge_entries.sql)。建表脚本用于首次初始化，已有表无需重复执行。
 
-### 启动 API 与扩展
+### 3. 配置后端
 
-数据库就绪后运行：
+```powershell
+Copy-Item apps/api/.env.example apps/api/.env
+```
+
+已有 `.env` 时直接检查配置，不需要覆盖。API Key 只填写在后端 `.env` 中，该文件已被 Git 忽略。
+
+| 配置项 | 说明 |
+| --- | --- |
+| `PORT` | 默认 `3000`，当前扩展连接此端口 |
+| `DATABASE_URL` | 本机 PostgreSQL 连接串，用户名、密码、端口需与实际一致 |
+| `DASHSCOPE_API_KEY` | 百炼 API Key |
+| `DASHSCOPE_BASE_URL` | 与 API Key 地域对应的兼容接口地址，以 `/compatible-mode/v1` 结尾 |
+| `QWEN_CHAT_MODEL` | 聊天模型，示例为 `qwen-plus`；需支持当前工具调用和联网接口 |
+| `EMBEDDING_MODEL` | 向量模型，示例为 `text-embedding-v4`；当前表与调用使用 1024 维 |
+| `QWEN_MAX_OUTPUT_TOKENS` | 回答最大输出长度，默认 `8192`，不用于裁剪输入正文 |
+
+例如：
+
+```dotenv
+DATABASE_URL=postgresql://researchflow:your_local_password@127.0.0.1:5432/researchflow
+```
+
+如果修改后端端口，还需要同步扩展中的 API 地址和主机权限。
+
+### 4. 启动 API
 
 ```powershell
 npm run dev:api
 ```
 
-另开一个终端打包扩展：
+开发模式下修改后端源文件会自动重启。可以访问健康检查地址：
+
+```text
+http://127.0.0.1:3000/api/health
+```
+
+正常返回：
+
+```json
+{ "api": "ok", "database": "ok" }
+```
+
+该接口会检查数据库连接；连接不可用时返回 503。
+
+### 5. 构建并加载扩展
+
+另开一个终端，在项目根目录运行：
 
 ```powershell
 npm run build -w @researchflow/extension
 ```
 
-打包结果位于 `apps/extension/dist`，其中包含 Chrome 需要的 `manifest.json`、`background.js`、`sidepanel.html` 和前端资源。打开 `chrome://extensions`，开启开发者模式，点击“加载已解压的扩展程序”，**选择整个 `apps/extension/dist` 文件夹**。点击扩展图标可打开侧栏。本地演示无需生成 `.crx` 文件，也无需上传 Chrome 网上应用店。
+1. 打开 `chrome://extensions`，开启开发者模式。
+2. 点击“加载已解压的扩展程序”。
+3. 选择 **`apps/extension/dist` 整个文件夹**。
+4. 打开普通 HTTP/HTTPS 技术文章，点击 ResearchFlow 图标。
+5. 按提示授权，等正文读取完成后提问。
 
-API 健康检查：`http://127.0.0.1:3000/api/health`。该接口同时检查 PostgreSQL 连接；数据库未启动时会返回 503。
+扩展修改后需要重新构建，并在扩展管理页点击“重新加载”。也可以持续监听构建：
 
-修改扩展代码后重新构建，并在 `chrome://extensions` 点击刷新。也可运行 `npm run dev:extension` 持续构建，然后手动刷新扩展。
+```powershell
+npm run dev:extension
+```
 
-当前侧栏已支持自动读取当前网页正文、直接提问、流式回答、真实工具进度、停止和按原资料重试、查看参考资料、编辑后确认保存笔记，以及在“我的知识”中查找、查看、修改和删除笔记。后端已支持知识库向量检索、按需联网搜索与网页阅读。API Key 只放在后端环境变量，不写入扩展或仓库。
+监听构建仍需手动重新加载扩展，不是网页开发服务器的自动热更新。
 
-## 新一轮设计与实现进度
+## 常用命令与测试
 
-当前已改为直接基于网页正文问答，不需要选中文字，也不显示正文预览。范围滑动开关、@ 当前窗口其他网页和指定笔记、流式进度与主动停止已接通。
+以下命令均在项目根目录执行：
 
-### 当前网页全文问答
+| 命令 | 作用 |
+| --- | --- |
+| `npm run dev:api` | 监听启动后端 |
+| `npm run dev:extension` | 监听构建扩展 |
+| `npm run build` | 构建后端和扩展 |
+| `npm run build -w @researchflow/api` | 单独构建后端 |
+| `npm run build -w @researchflow/extension` | 单独检查类型并构建扩展 |
+| `npm run test:research-stream -w @researchflow/api` | 运行研究任务回归测试，需先有后端编译产物 |
 
-扩展构建后在管理页重新加载，打开普通技术文章、点击扩展图标，等“已读取网页正文”后直接输入问题。权限不足点击“授权并读取此站点”；无法取得标题和网址时点击“允许显示标签页信息”。仅读取不自动发给模型，点击开始研究才提交。
+```powershell
+npm run build -w @researchflow/api
+npm run test:research-stream -w @researchflow/api
+```
 
-已取消三万字符限制，完整正文直接交给模型。单篇 8 MiB 正文是传输资源上限；服务端模型容量超限时明确提示，不悄悄截取。切换网页更新当前页信息，但已提交的任务继续使用原正文，保留回答与保存编辑内容。正文和回答不会自动存入知识库。
+当前包含 16 项回归测试，覆盖流式片段、工具参数、多轮补查、来源对应、次数限制、停止取消、提前断流、接口兼容、长文末尾传递和下载容量超限。测试使用本地 HTTP 模型与工具替身，不访问百炼、不写入真实知识库。
 
-联网阅读也已取消前 12,000 字符截断，提取到的主要正文完整交给模型。HTML 下载超过 8 MiB 时明确报错；引用悬停仍显示短预览，不影响模型收到的正文。
+真实模型的可控场景检查与自动化测试范围不同，验证过程见 [联网问答问题复盘](docs/retrospective-web-search-and-follow-up.md)。
 
-联网研究已支持有次数上限的补查循环：资料不足时模型可调整搜索词、换网页阅读，优先核对相关官方文档或项目源码。整次任务最多搜索 2 次、阅读 3 篇；足够时提前回答，达到上限后使用已有证据收尾。两轮来源去重并保持引用编号，全部成功读取的网页都保留自己的引用片段；每次真实操作都在执行记录里展示。
+## 主要接口
 
-这次问题的现象、原因、解决过程、验证结果和取舍见 [联网问答问题复盘](docs/retrospective-web-search-and-follow-up.md)。
+默认地址为 `http://127.0.0.1:3000`。
 
-后端运行 npm run dev:api 时源文件修改会自动重启；若运行的是生产命令，需要重新构建并重启。当前 POST /api/research/run 接收 question、materials（pages 和 noteIds）、options。每篇正文包含 title、url、text、capturedAt、completeness（必须是 full）。旧版单篇 context 请求继续兼容，不能与 materials 同时提供；旧选区 truncated 字段已移除。
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/health` | API 与数据库健康检查 |
+| POST | `/api/research/run/stream` | 研究任务 SSE 流式接口 |
+| POST | `/api/research/run` | 同一任务的 JSON 接口，便于在 Apifox 调试 |
+| POST | `/api/knowledge` | 确认保存笔记 |
+| GET | `/api/knowledge?q=关键词` | 查看或按关键词筛选笔记 |
+| GET | `/api/knowledge/search?q=问题` | 按问题向量检索并筛选相关笔记 |
+| GET / PATCH / DELETE | `/api/knowledge/:id` | 查看、修改、删除单条笔记 |
 
-### 全文直传与界面简化
+研究请求使用 `question`、`materials`（`pages`、`noteIds`）和 `options`。请求示例及旧版单篇请求兼容规则见 [SDD-005](docs/SDD-005-research-materials.md#旧单篇接口兼容)。
 
-网页信息和问题输入合并为一张卡片，内部仍按组件分工。正文提取使用 Readability，格式转换使用 Turndown 和表格插件，替换手写节点转换逻辑。
+## 当前范围与限制
 
-[SDD-006](docs/SDD-006-long-document-processing.md) 已改为全文直传方案，取消网页分段 RAG、意图分流、分层总结和本地分词预算；个人知识库原有 RAG 保留。模型调用记录服务端实际用量；QWEN_MAX_OUTPUT_TOKENS 可配置回答长度，默认 8192。草稿恢复已完成，下一步是流式反馈。
+- 一次提交完成一次研究任务，没有自动继承所有上一轮问答的聊天记忆。知识库 RAG 与界面草稿恢复是独立能力。
+- 当前网页和指定网页的主要正文完整传递，取消了固定字符截断；浏览器提交正文合计与联网 HTML 下载各有 8 MiB 的资源上限，超限明确报错。模型上下文容量按实际服务端限制处理。
+- 指定资料最多 3 篇网页、3 条笔记；联网读取仅接受本轮搜索所得网页。
+- 服务端网页读取不执行 JavaScript，登录、验证或动态加载页面可能读取失败。浏览器内部页、PDF 等暂不支持。
+- 切页保留本次任务快照；关闭侧栏会中断进行中的请求。草稿属于 Chrome 会话暂存，浏览器重启、扩展重载或容量不足时不保证恢复。
+- 搜索结果、已读正文和实际引用分别记录。工具运行成功或出现引用标记，不等于所有结论都经过逐句核实。
+- 当前不包含账号体系、跨设备同步、多 Agent、长期对话记忆或公开在线部署。
 
-### 资料范围与仅知识库问答
+## 设计与复盘文档
 
-输入框下方提供“使用当前网页”“搜索个人知识库”“允许联网”三个滑动开关，默认前两项开启、联网关闭。网页未就绪时可以关闭“使用当前网页”，直接查个人笔记。没有指定资料且三个开关都关闭时不能提交；有指定笔记或其他网页时仍可提问。联网关闭后，后端不提供或执行联网工具；知识库关闭后跳过向量检索，但保留用户明确指定的笔记。
+| 文档 | 内容 |
+| --- | --- |
+| [PRD](docs/PRD.md) | 产品目标、功能范围与边界 |
+| [数据库选型](docs/database-choice.md) | PostgreSQL、pgvector 与 MySQL 的取舍 |
+| [SDD-001](docs/SDD-001-page-context.md) | 网页正文读取与权限 |
+| [SDD-002](docs/SDD-002-single-task-agent.md) | 一次研究任务与联网补查循环 |
+| [SDD-003](docs/SDD-003-knowledge-base.md) | 知识库、向量化与相关性筛选 |
+| [SDD-004](docs/SDD-004-answer-rendering-and-citations.md) | Markdown 排版与自然文字引用 |
+| [SDD-005](docs/SDD-005-research-materials.md) | 资料范围、@ 资料与切页状态 |
+| [SDD-006](docs/SDD-006-long-document-processing.md) | 全文直传与资源限制 |
+| [SDD-007](docs/SDD-007-streaming-research.md) | 流式进度、停止与重试 |
+| [联网问答问题复盘](docs/retrospective-web-search-and-follow-up.md) | 问题现象、原因、解决过程与验证边界 |
 
-每次提交固定问题、正文和范围；切页或更改下一次提问的选项不改写旧答案。无网页来源的知识库笔记可从引用处打开详情，保存新问答时网页来源可留空。当前接口与 Apifox 示例见 SDD-005 末尾。
+## 分支约定
 
-### @ 添加其他网页和指定笔记
-
-在问题开头或空格后输入 @，或点击“添加资料”，选择当前窗口的其他 HTTP/HTTPS 网页或个人笔记。选择器使用 Headless UI，支持搜索、上下键、Enter 和 Escape。首次查看标签页列表可能需要授权；读取其他站点正文需要单独授权。未选中的网页不会读取正文。
-
-最多使用 3 篇网页（包含当前网页）、3 条指定笔记；网页正文合计最多 8 MiB。指定网页会保留自己的正文快照，可以重新读取或移除；笔记由后端按 ID 读取最新版本。关闭知识库自动搜索仍会使用指定笔记。
-
-如果“我的知识”提示无法连接服务，先启动 npm run dev:api，再点击重试；失败时不再同时显示“没有笔记”。
-
-### 草稿和笔记编辑恢复
-
-同窗口关闭再打开侧栏，会恢复未提交问题、范围开关、@ 资料、最近完成回答，以及保存笔记前修改的标题和正文。下一次问题与上一份回答分开保存，编辑草稿不会改变旧回答的来源；得到新回答时不会套用旧笔记编辑内容。
-
-尚未读完的网页会提示重新读取；未完成的问答会提示重试，不自动请求模型或保存笔记。当前网页重新读取，固定的 @ 网页保留已有快照。恢复属于 Chrome 会话暂存，不是永久历史记录，浏览器重启或扩展重新加载后不承诺保留。
-
-输入修改在 200ms 后暂存，开始问答、收到结果、页面隐藏时也会尝试写入。同一份正文只存一次。空间不足时会提示“重试暂存”；突然崩溃前尚未写完的修改可能丢失。关闭侧栏会取消后端模型和工具请求，重开不会自动重新执行。
-
-验证方法：输入问题并添加资料，稍等片刻，关闭后重开侧栏；再修改一份回答的笔记标题和正文，关闭后重开，检查编辑内容仍在且没有自动入库。
-
-保存前编辑和知识库修改均使用可视化正文编辑器，直接修改标题、段落、表格和代码，来源链接会保留。工具栏提供标题、加粗、列表、代码块、撤销和重做。共用组件为 knowledge-base/KnowledgeEditor.vue，按需加载；既有笔记和保存接口继续兼容。
-
-### 流式、停止和重试
-
-开始研究后，文字会随模型真实片段到达，执行记录只展示实际发生的步骤。新旧正文共用一个回答区，新片段在原位置替换旧正文。可点击“停止生成”；已收到的部分内容保留供查看，上一份完成回答和笔记编辑仍保留为备份，可在同一区域切回查看。
-
-停止或失败后点击“按原资料重试”，会沿用原问题、网页快照、笔记 ID 和范围开关，创建新运行。切页或修改输入框不会改变这次重试。重开侧栏不会自动执行，仍可手动重试；不承诺恢复部分生成内容或永久执行记录。
-
-流式接口：`POST http://127.0.0.1:3000/api/research/run/stream`，请求体与原 `/run` 相同，响应为 SSE。旧 JSON 接口继续可用。先构建后端，再运行 `npm run test:research-stream -w @researchflow/api` 可执行不联网、不写数据库的集成检查。详细说明见 [SDD-007](docs/SDD-007-streaming-research.md)。
+- `main`：已合并的项目版本。
+- `develop`：后续开发的集成分支。
+- 新功能从 `develop` 创建功能分支，完成验证后合并，并清理已合并的分支。
