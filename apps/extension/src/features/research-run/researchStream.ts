@@ -1,10 +1,12 @@
 import { createParser } from "eventsource-parser";
 import type { ResearchRequest, ResearchResult } from "./researchApi";
 
+export interface ResearchStepLink { title: string; url: string }
+
 export type ResearchEvent = { runId: string; sequence: number } & (
   | { type: "run.started" }
-  | { type: "step.started"; stepId: string; label: string }
-  | { type: "step.completed"; stepId: string; detail?: string }
+  | { type: "step.started"; stepId: string; label: string; detail?: string; links?: ResearchStepLink[] }
+  | { type: "step.completed"; stepId: string; detail?: string; links?: ResearchStepLink[] }
   | { type: "step.failed"; stepId: string; message: string }
   | { type: "answer.reset" }
   | { type: "answer.delta"; text: string }
@@ -41,6 +43,10 @@ export async function streamResearch(input: ResearchRequest, signal: AbortSignal
     }
     runId = event.runId;
     sequence = event.sequence;
+    if ("links" in event && event.links !== undefined && (!Array.isArray(event.links) ||
+      !event.links.every((link) => link && typeof link.title === "string" && typeof link.url === "string"))) {
+      throw new Error("网页进度信息不完整");
+    }
     switch (event.type) {
       case "step.started": if (typeof event.stepId !== "string" || typeof event.label !== "string") throw new Error("步骤信息不完整"); break;
       case "step.completed": if (typeof event.stepId !== "string") throw new Error("步骤信息不完整"); break;

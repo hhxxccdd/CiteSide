@@ -1,10 +1,15 @@
 import type { QwenRequestOptions } from "../llm/qwen.client";
 import type { ResearchResult } from "./research.service";
 
+export interface ResearchStepInfo {
+  detail?: string;
+  links?: Array<{ title: string; url: string }>;
+}
+
 export type ResearchEventData =
   | { type: "run.started" }
-  | { type: "step.started"; stepId: string; label: string }
-  | { type: "step.completed"; stepId: string; detail?: string }
+  | ({ type: "step.started"; stepId: string; label: string } & ResearchStepInfo)
+  | ({ type: "step.completed"; stepId: string } & ResearchStepInfo)
   | { type: "step.failed"; stepId: string; message: string }
   | { type: "answer.reset" }
   | { type: "answer.delta"; text: string }
@@ -34,13 +39,15 @@ export class ResearchExecution {
     return { signal: this.signal, onDelta: (text) => this.emit({ type: "answer.delta", text }) };
   }
 
-  async step<T>(label: string, task: () => Promise<T>, describe?: (result: T) => string): Promise<T> {
+  async step<T>(label: string, task: () => Promise<T>, describe?: (result: T) => string | ResearchStepInfo,
+    initial?: ResearchStepInfo): Promise<T> {
     const stepId = `step-${++this.stepNumber}`;
-    this.emit({ type: "step.started", stepId, label });
+    this.emit({ type: "step.started", stepId, label, ...initial });
     try {
       const result = await task();
       this.signal.throwIfAborted();
-      this.emit({ type: "step.completed", stepId, detail: describe?.(result) });
+      const info = describe?.(result);
+      this.emit({ type: "step.completed", stepId, ...(typeof info === "string" ? { detail: info } : info) });
       return result;
     } catch (error) {
       this.signal.throwIfAborted();
@@ -51,6 +58,6 @@ export class ResearchExecution {
 }
 
 export function researchStep<T>(execution: ResearchExecution | undefined, label: string,
-  task: () => Promise<T>, describe?: (result: T) => string): Promise<T> {
-  return execution ? execution.step(label, task, describe) : task();
+  task: () => Promise<T>, describe?: (result: T) => string | ResearchStepInfo, initial?: ResearchStepInfo): Promise<T> {
+  return execution ? execution.step(label, task, describe, initial) : task();
 }

@@ -122,6 +122,14 @@ test('工具参数按片段组装，进度对应真实搜索和阅读', async ()
     ['判断是否需要联网', '联网搜索', '判断是否需要阅读原文', '读取网页原文', '生成回答']);
   assert.equal(events.at(-1).result.readPage.title, 'TS 原文');
   assert.equal(events.filter((e) => e.type === 'step.completed').length, 5);
+  const startedSteps = events.filter((event) => event.type === 'step.started');
+  const searchStep = startedSteps.find((event) => event.label === '联网搜索');
+  assert.equal(searchStep.detail, '搜索：泛型');
+  const searchDone = events.find((event) => event.type === 'step.completed' && event.stepId === searchStep.stepId);
+  assert.deepEqual(searchDone.links, [{ title: 'TS 原文', url: 'https://example.com/ts' }]);
+  const readStep = startedSteps.find((event) => event.label === '读取网页原文');
+  assert.deepEqual(readStep.links, searchDone.links);
+  assert.ok(readStep.sequence > searchDone.sequence);
 });
 
 test('工具失败有真实失败事件，同时可以使用已有资料完成回答', async () => {

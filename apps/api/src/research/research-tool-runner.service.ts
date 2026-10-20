@@ -115,8 +115,10 @@ export class ResearchToolRunner {
       } else {
         searched = true;
         try {
-          const result = await researchStep(execution, "联网搜索", () => this.performWebSearch(call, execution?.signal),
-            (result) => `返回 ${result.sources.length} 条搜索结果`);
+          const query = this.parseSearchQuery(call);
+          const result = await researchStep(execution, "联网搜索", () => this.performWebSearch(query, execution?.signal),
+            (result) => ({ detail: `搜索“${query}”，返回 ${result.sources.length} 条结果`, links: result.sources }),
+            { detail: `搜索：${query}` });
           sources = result.sources;
           toolResult = {
             ...result,
@@ -138,8 +140,7 @@ export class ResearchToolRunner {
     return { sources, failed };
   }
 
-  private async performWebSearch(call: QwenToolCall, signal?: AbortSignal): Promise<WebSearchResult> {
-    const query = this.parseSearchQuery(call);
+  private async performWebSearch(query: string, signal?: AbortSignal): Promise<WebSearchResult> {
     return this.webSearch.execute({ query }, signal);
   }
 
@@ -190,15 +191,15 @@ export class ResearchToolRunner {
         readAttempted = true;
         let source: WebSearchSource | undefined;
         try {
-          let sourceIndex = 0;
+          const sourceIndex = this.parseSourceIndex(call, sources.length);
+          const selectedSource = sources[sourceIndex - 1];
+          source = selectedSource;
           readPage = await researchStep(execution, "读取网页原文", async () => {
-            sourceIndex = this.parseSourceIndex(call, sources.length);
-            source = sources[sourceIndex - 1];
             return this.readWebPage.execute({
-              url: source.url,
+              url: selectedSource.url,
               allowedUrls: sources.map((source) => source.url),
             }, execution?.signal);
-          }, (page) => page.title);
+          }, (page) => page.title, { links: [source] });
           toolResult = { ...readPage, sourceId: webSourceId(sourceIndex - 1) };
         } catch (error) {
           execution?.signal.throwIfAborted();

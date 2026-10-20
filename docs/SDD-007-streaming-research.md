@@ -41,8 +41,8 @@ sequenceDiagram
 | 类型 | 额外内容 | 什么时候发送 |
 | --- | --- | --- |
 | `run.started` | 无 | 后端开始本次任务 |
-| `step.started` | stepId、label | 即将执行实际步骤 |
-| `step.completed` | stepId、detail（可选） | 步骤成功返回 |
+| `step.started` | stepId、label、detail / links（可选） | 即将执行实际步骤 |
+| `step.completed` | stepId、detail / links（可选） | 步骤成功返回 |
 | `step.failed` | stepId、message | 步骤确实失败 |
 | `answer.reset` | 无 | 开始新的回答阶段或转入工具执行 |
 | `answer.delta` | text | 收到模型的新文字 |
@@ -50,6 +50,14 @@ sequenceDiagram
 | `run.failed` | message | 整个任务未完成 |
 
 工具失败不一定代表整次任务失败。例如网页要求验证，后端发送步骤失败事件，然后可以根据用户提交的正文继续回答，并保留原有工具失败提示。
+
+### 联网时显示哪些网页（2026-10-20）
+
+`links` 是 `{ title, url }` 的数组，全部来自真实工具结果。搜索开始时显示本次关键词；搜索返回时显示实际找到的网页标题、域名和可打开链接。当前搜索接口一次返回整份结果，所以在返回前不显示或猜测候选网页。
+
+读取网页开始前，就把选中的目标网页放进对应步骤；读取失败后仍保留这个链接，方便打开原文。候选列表只表示搜索到了这些网页，不表示每篇都读过。前端仅生成 HTTP/HTTPS 链接，在新标签页打开，切页继续遵循原任务快照。
+
+沿用 `research-execution.ts`、`researchStream.ts`、`useResearchRun.ts` 和 `ResearchProgress.vue`，没有增加新的搜索或阅读工具。步骤标题与链接分别传递，显示层不从日志或回答里猜网址。
 
 只有收到 `run.completed` 才更新“已完成回答”。中途断线、模型没有正常结束、输出长度截断，都显示未完成和重试入口，不把半截文字当成成功。
 

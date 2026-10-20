@@ -1,5 +1,5 @@
 import { onUnmounted, ref, shallowRef } from "vue";
-import { streamResearch, type ResearchEvent } from "./researchStream";
+import { streamResearch, type ResearchEvent, type ResearchStepLink } from "./researchStream";
 import type { ResearchResult } from "./researchApi";
 import type { ResearchAttempt } from "./researchSession";
 
@@ -8,6 +8,7 @@ export interface ResearchStep {
   label: string;
   state: "running" | "completed" | "failed" | "stopped";
   detail: string;
+  links: ResearchStepLink[];
 }
 
 export function useResearchRun(options: {
@@ -28,12 +29,14 @@ export function useResearchRun(options: {
 
   function flushAnswer(): void { clearTimeout(timer); timer = undefined; liveAnswer.value = text; }
   function receive(event: ResearchEvent): void {
-    if (event.type === "step.started") steps.value.push({ id: event.stepId, label: event.label, state: "running", detail: "" });
+    if (event.type === "step.started") steps.value.push({ id: event.stepId, label: event.label,
+      state: "running", detail: event.detail ?? "", links: event.links ?? [] });
     if (event.type === "step.completed" || event.type === "step.failed") {
       const step = steps.value.find((step) => step.id === event.stepId);
       if (!step) throw new Error("收到未知步骤的进度");
       step.state = event.type === "step.completed" ? "completed" : "failed";
       step.detail = event.type === "step.completed" ? event.detail ?? "" : event.message;
+      if (event.type === "step.completed" && event.links !== undefined) step.links = event.links;
     }
     if (event.type === "answer.reset") { text = ""; flushAnswer(); }
     if (event.type === "answer.delta") {
