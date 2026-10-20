@@ -78,6 +78,8 @@ API 健康检查：`http://127.0.0.1:3000/api/health`。该接口同时检查 Po
 
 联网研究已支持有次数上限的补查循环：资料不足时模型可调整搜索词、换网页阅读，优先核对相关官方文档或项目源码。整次任务最多搜索 2 次、阅读 3 篇；足够时提前回答，达到上限后使用已有证据收尾。两轮来源去重并保持引用编号，全部成功读取的网页都保留自己的引用片段；每次真实操作都在执行记录里展示。
 
+这次问题的现象、原因、解决过程、验证结果和取舍见 [联网问答问题复盘](docs/retrospective-web-search-and-follow-up.md)。
+
 后端运行 npm run dev:api 时源文件修改会自动重启；若运行的是生产命令，需要重新构建并重启。当前 POST /api/research/run 接收 question、materials（pages 和 noteIds）、options。每篇正文包含 title、url、text、capturedAt、completeness（必须是 full）。旧版单篇 context 请求继续兼容，不能与 materials 同时提供；旧选区 truncated 字段已移除。
 
 ### 全文直传与界面简化
